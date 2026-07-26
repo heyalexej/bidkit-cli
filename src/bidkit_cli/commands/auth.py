@@ -97,6 +97,45 @@ def _doctor_report(context: CliContext, config: Any) -> dict[str, Any]:
         },
         "sdk_version": _safe_version("bidkit"),
         "cli_version": _safe_version("bidkit-cli"),
+        "scope_coverage": _scope_coverage(context, config),
+    }
+
+
+def _scope_coverage(context: CliContext, config: Any) -> dict[str, Any]:
+    """How much of the operation surface the configured grant actually reaches.
+
+    ``ready: true`` answers "can I authenticate", which is not the same as "can
+    I do the thing I was asked to do" — an account can be perfectly configured
+    and still be unable to call a third of the surface for want of a scope.
+    Surfacing the count here puts that in front of whoever is checking their
+    setup, with the missing scopes named so re-consent is a decision, not a
+    discovery made later from a 403. Offline: manifest data plus the config.
+    """
+    configured = {str(s) for s in (config.scopes or ())}
+    if not configured:
+        return {"granted": 0, "blocked": 0, "total": 0, "missing_scopes": []}
+    granted = blocked = 0
+    missing: dict[str, int] = {}
+    try:
+        operations = context.manifest.operations
+    except Exception:  # noqa: BLE001 - a doctor must never fail on diagnostics
+        return {"granted": 0, "blocked": 0, "total": 0, "missing_scopes": []}
+    for op in operations:
+        required = list(getattr(op.auth, "scopes", ()) or ())
+        gaps = [s for s in required if s not in configured]
+        if gaps:
+            blocked += 1
+            for scope in gaps:
+                missing[scope] = missing.get(scope, 0) + 1
+        else:
+            granted += 1
+    ranked = sorted(missing.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {
+        "granted": granted,
+        "blocked": blocked,
+        "total": granted + blocked,
+        # Named so the user can decide what to re-consent to, biggest win first.
+        "missing_scopes": [{"scope": s, "operations": n} for s, n in ranked],
     }
 
 

@@ -76,9 +76,18 @@ def capabilities_group() -> None:
 @click.option("--all", "show_all", is_flag=True, default=False,
               help="Include every operation, not just the curated restricted/broken "
                    "surfaces (default: only operations the capability policy curates).")
+@click.option("--scope-blocked", "scope_blocked", is_flag=True, default=False,
+              help="Only operations this account's scopes do NOT cover.")
+@click.option("--granted", "granted_only", is_flag=True, default=False,
+              help="Only operations this account's scopes DO cover.")
 @click.pass_context
 def capabilities_list(
-    ctx: click.Context, status: str | None, service: str | None, show_all: bool
+    ctx: click.Context,
+    status: str | None,
+    service: str | None,
+    show_all: bool,
+    scope_blocked: bool,
+    granted_only: bool,
 ) -> None:
     """List capability availability across the generated surface.
 
@@ -86,10 +95,24 @@ def capabilities_list(
     capability policy actually curates (restricted/broken/stale surfaces) plus a
     summary, instead of all ~455 operations × ~20 mostly-null fields. Pass
     ``--all`` for the full dump.
+
+    ``--scope-blocked`` / ``--granted`` answer "what can this account actually
+    call right now" by comparing each operation's required scopes against the
+    configured grant. They scan the whole surface rather than the curated view:
+    a missing scope is a property of the grant, not of eBay's capability policy,
+    so restricting the scan to curated entries would hide most of the answer.
     """
     context: CliContext = ctx.obj
     manifest = context.manifest
     configured_scopes = _configured_scopes(context)
+    if scope_blocked and granted_only:
+        raise UsageError("--scope-blocked and --granted are opposites; pass one")
+    scope_filter = scope_blocked or granted_only
+    if scope_filter and configured_scopes is None:
+        raise UsageError(
+            "no configured scopes to compare against",
+            hint="run `bidkit auth doctor` to check the config, then `bidkit auth login`",
+        )
     views = []
     for op in manifest.operations:
         if service and op.service_key != service:
@@ -97,12 +120,21 @@ def capabilities_list(
         policy = capability_for(op.key)
         # Default view = restricted/degraded surfaces only. A policy that merely
         # annotates availability (``available``) is not a restriction, so it is
-        # excluded from the default listing and only appears with --all.
-        if not show_all and (policy is None or policy.availability == AVAILABILITY_AVAILABLE):
+        # excluded from the default listing and only appears with --all. A scope
+        # filter overrides that: it asks about the grant, not the policy.
+        if (
+            not show_all
+            and not scope_filter
+            and (policy is None or policy.availability == AVAILABILITY_AVAILABLE)
+        ):
             continue
         view = _policy_view(op)
         if configured_scopes is not None:
             view.update(_scope_grant_status(view, configured_scopes))
+        if scope_blocked and view.get("required_scopes_granted", True):
+            continue
+        if granted_only and not view.get("required_scopes_granted", True):
+            continue
         if status == "unavailable" and view["availability"] == AVAILABILITY_AVAILABLE:
             continue
         if status and status != "unavailable" and view["availability"] != status:

@@ -96,6 +96,18 @@ never touches the network.
 - `bidkit capabilities list` — which generated operations this account can actually use
   (restricted/broken/stale surfaces only by default; `--all` for the full dump).
   `bidkit capabilities describe OP` explains one surface, with fuzzy suggestions on a typo.
+- **What the current OAuth grant permits** — two axes, both offline:
+
+  ```bash
+  bidkit capabilities list --scope-blocked   # operations the configured scopes do NOT cover
+  bidkit capabilities list --granted         # …and the ones they do
+  bidkit auth doctor                         # `scope_coverage`: granted/blocked + missing scopes, ranked
+  ```
+
+  Scope coverage is separate from eBay's capability policy: an operation can be
+  perfectly available and still unreachable for want of a scope. A missing scope
+  is fixed by re-consenting (`auth login`) with the scope added, which is a user
+  action — surface it rather than retrying into a 403.
 - `bidkit auth doctor --show-capabilities` — capability snapshot alongside config diagnostics,
   with a first-install `ready`/`next_steps` block. `bidkit auth init` writes a skeleton config.
 - `bidkit sell inventory test-run …` — a durable ledger for controlled test runs: `init`,
