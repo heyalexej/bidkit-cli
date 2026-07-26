@@ -19,6 +19,11 @@ from .context import CliContext
 from .errors import CliError, report_error
 from .manifest import assert_sdk_compatible, load_manifest
 
+# The one context of this invocation, published for main()'s cleanup. A CLI
+# process handles exactly one invocation, and Click's context stack is already
+# unwound by the time cleanup runs, so a single slot is the honest scope.
+_ACTIVE_CONTEXT: list[CliContext | None] = [None]
+
 LOG_LEVELS = ["quiet", "warning", "info", "debug"]
 
 
@@ -53,12 +58,14 @@ _GLOBAL_VALUE_OPTIONS = {
     "--timeout", "--max-retries", "--log-level", "--select",
     "--content-language", "--wait-for-live",
     "--test-marker", "--test-run-id", "--test-provenance", "--ledger-dir",
+    "--sessions-dir", "--session-id",
 }
 _GLOBAL_FLAG_OPTIONS = {
     "--trace", "--no-color", "--allow-write", "--allow-write-expert",
     "--yes", "--dry-run", "--force", "--pretty", "--compact", "--include-meta",
     "--marketplace-locale", "--merge", "--verify-live",
     "--test-mode", "--allow-scrambled-test-data", "--allow-untracked-test-run",
+    "--no-session-log",
 }
 
 
@@ -242,6 +249,16 @@ def _global_options(func):
                      help="Directory for test-run ledger files (default: "
                           "$XDG_CACHE_HOME/bidkit/test-runs). Applies to both the "
                           "test-run commands and automatic event recording."),
+        # Session audit log. On by default; --no-session-log disables it, and
+        # --sessions-dir / --session-id select the location and (optionally)
+        # append to an existing session.
+        click.option("--no-session-log", "no_session_log", is_flag=True, default=False,
+                     help="Disable the per-session audit log (gate/op/error records)."),
+        click.option("--sessions-dir", "sessions_dir", type=click.Path(), default=None,
+                     help="Directory for session log files (default: "
+                          "$XDG_STATE_HOME/bidkit/sessions)."),
+        click.option("--session-id", "session_id", default=None,
+                     help="Append to an existing session id instead of starting a new one."),
     ]
     for option in reversed(options):
         func = option(func)
@@ -297,8 +314,15 @@ def cli(ctx: click.Context, **kwargs: Any) -> None:
         test_run_id=kwargs.get("test_run_id"),
         test_provenance=_parse_test_provenance(kwargs.get("test_provenance")),
         ledger_dir=kwargs.get("ledger_dir"),
+        session_log=not kwargs.get("no_session_log", False),
+        sessions_dir=kwargs.get("sessions_dir"),
+        session_id=kwargs.get("session_id"),
     )
     ctx.obj = context
+    # Remember the context for main()'s cleanup: by the time that ``finally``
+    # runs, Click has already popped its context stack, so the recorder's
+    # ``end`` record and the client close must reach the object some other way.
+    _set_active_context(context)
     level = {"quiet": logging.CRITICAL, "warning": logging.WARNING,
              "info": logging.INFO, "debug": logging.DEBUG}[context.log_level]
     logging.getLogger("bidkit").setLevel(level)
@@ -322,6 +346,16 @@ def build_cli() -> click.Group:
     cli.add_command(version_command)
     cli.add_command(completion_command)
     cli.add_command(skill_command)
+
+    # Session-log command group (`bidkit session list/show/grep/doctor/gc/revert`),
+    # owned by a parallel worker. Registered exactly like the groups above once
+    # commands/session.py lands; its absence must never break the rest of the CLI.
+    try:
+        from .commands.session import session_group
+    except ImportError:
+        pass
+    else:
+        cli.add_command(session_group)
 
     # Generated namespace groups (buy, commerce, developer, post-order, sell).
     # Built lazily from the manifest so adding an operation upstream grows the
@@ -357,7 +391,9 @@ def main() -> None:
     code that ignored ``cli.main``'s return value silently swallowed every
     intentional non-zero exit (e.g. ``verify-public`` on an unmet expectation).
     We now exit on that value, and also handle ``click.exceptions.Exit``
-    defensively in case a future caller flips standalone mode back on.
+    defensively in case a future caller flips standalone mode back on. The exit
+    code is captured so the session recorder's ``end`` record and client cleanup
+    run on EVERY path (success or error) from a single ``finally``.
     """
     reordered = _reorder_global_options(list(sys.argv[1:]))
     # The JSON-vs-text shape of an error follows the *requested* format, not
@@ -365,9 +401,11 @@ def main() -> None:
     # We parse the global --format from the reordered argv so
     # the decision is stable regardless of where the agent placed the flag.
     json_mode = _requested_json_mode(reordered)
+    exit_code = 0
     try:
         # standalone_mode=False lets us translate errors to our exit codes.
         rv = cli.main(args=reordered, standalone_mode=False, prog_name="bidkit")
+        exit_code = rv if isinstance(rv, int) else 0
     except click.exceptions.UsageError as exc:
         # Click usage errors join the stable error contract: the JSON envelope
         # in JSON mode (so `--format json` never gets bare prose), plain text
@@ -378,18 +416,18 @@ def main() -> None:
         from .errors import UsageError as _UsageError
 
         err = _UsageError(exc.format_message())
-        sys.exit(report_error(err, json_mode=json_mode))
+        exit_code = report_error(err, json_mode=json_mode)
     except click.exceptions.Abort:
         # A user-aborted prompt (Ctrl-C at a confirmation) is distinct from a
         # safety *refusal*: 130 mirrors the shell convention for an interrupted
         # program, while a SafetyError keeps its dedicated exit 7.
-        sys.exit(130)
+        exit_code = 130
     except click.exceptions.Exit as exc:
-        sys.exit(exc.exit_code)
+        exit_code = exc.exit_code
     except CliError as exc:
-        sys.exit(report_error(exc, json_mode=json_mode))
+        exit_code = report_error(exc, json_mode=json_mode)
     except KeyboardInterrupt:
-        sys.exit(130)
+        exit_code = 130
     except Exception as exc:
         # Catch-all: any exception escaping the dispatch try (workflows, ledger,
         # streaming) is translated to a stable error instead of a raw traceback.
@@ -402,21 +440,40 @@ def main() -> None:
             hint="This is a bug in bidkit-cli, not in your request; "
                  "re-run with --log-level debug and report it.",
         )
-        sys.exit(report_error(err, json_mode=json_mode))
+        exit_code = report_error(err, json_mode=json_mode)
     finally:
-        # Close any client we opened. The context may live on the top Click ctx.
-        _close_context()
-    # Honor Click's intentional exit code (e.g. verify-public's 1).
-    sys.exit(rv if isinstance(rv, int) else 0)
+        # Finish the session recorder (end record) and close the client on every
+        # exit path; both are best-effort so a fault can never mask exit_code.
+        _finish_and_close(exit_code)
+    sys.exit(exit_code)
 
 
-def _close_context() -> None:
-    try:
-        ctx = click.get_current_context(silent=True)
-        if ctx and isinstance(ctx.obj, CliContext):
-            ctx.obj.close()
-    except Exception:  # noqa: BLE001 - cleanup must never mask the real exit
-        pass
+def _set_active_context(context: CliContext) -> None:
+    """Publish the invocation's context for :func:`_finish_and_close`."""
+    _ACTIVE_CONTEXT[0] = context
+
+
+def _finish_and_close(exit_code: int) -> None:
+    """Best-effort session-log finish + client close on every exit path.
+
+    The recorder's ``end`` record (exit code + duration) and the injected http
+    client's cleanup must both happen whether the command succeeded or raised,
+    so this runs from :func:`main`'s ``finally``. The context comes from the
+    module slot rather than ``click.get_current_context``: Click's stack is
+    already unwound here, so asking Click would silently find nothing and every
+    clean run would look like a crashed session (no ``end`` record). Recording
+    is wrapped so a recorder fault can never mask the real exit code.
+    """
+    context = _ACTIVE_CONTEXT[0]
+    if context is None:
+        return
+    _ACTIVE_CONTEXT[0] = None
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        context.recorder.finish(exit_code)
+    with contextlib.suppress(Exception):
+        context.close()
 
 
 if __name__ == "__main__":

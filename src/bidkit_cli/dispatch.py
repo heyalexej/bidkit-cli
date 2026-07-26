@@ -231,6 +231,10 @@ def execute(
         yes=context.yes,
     )
 
+    # 4b. Record the gate verdict (best-effort): which gates ran and their
+    #     outcome, so an audit can reconstruct allow/deny without the ledger.
+    _record_session_gate(context, operation, test_warnings)
+
     # 4a. Read/merge/write for replace-like PUTs. Must run
     #     after the safety gate (the merge is a read, but the PUT it feeds is
     #     gated) and after --dry-run (the merge needs a network read). We merge
@@ -244,14 +248,26 @@ def execute(
     client = context.client
     resource = resolve_resource(client, service)
     path_args = [path_params[p.wire_name] for p in operation.path_params]
-    result = _dispatch_with_retry(
-        context, resource, operation, path_args, path_params, query_params,
-        known_query, unknown_query, known_headers, extra_headers,
-        validated_body, files,
-    )
+    try:
+        result = _dispatch_with_retry(
+            context, resource, operation, path_args, path_params, query_params,
+            known_query, unknown_query, known_headers, extra_headers,
+            validated_body, files,
+        )
+    except (ApiError, TransportError) as exc:
+        # Best-effort error record for a classified API/transport failure; the
+        # exception is re-raised so the exit-code / error contract is unchanged.
+        _record_session_error(context, operation, exc)
+        raise
 
     if result is _STREAMED:
         return  # the stream path already wrote output / emitted a summary
+
+    # 5a. Record the op (best-effort): attempts, status, eBay trace ids, and the
+    #     reverse hint, mirroring the ledger's fail-open discipline.
+    _record_session_op(
+        context, operation, result, path_params, query_params, validated_body
+    )
 
     # When --test-run-id is present, automatically record the
     # successful mutation to the durable ledger so a crash between publish and
@@ -902,6 +918,181 @@ _RECORDABLE_MUTATIONS = {
 }
 
 
+def _extract_resource_ids(
+    result: Any, path_params: dict[str, str], request_body: Any = None,
+) -> dict[str, str | None]:
+    """Extract sku/offer_id/listing_id exactly as the ledger and op record need.
+
+    Shared by :func:`_record_test_event` (test-run ledger) and the session
+    ``op`` record so the two never drift. Path params are keyed by **wire**
+    name (``offerId``/``sku``), the SKU for ``createOffer`` lives in the request
+    body, and ``publishOffer`` returns ``{listingId, offers:[{offerId}]}``.
+    """
+    body: Any = None
+    if isinstance(result, httpx2.Response):
+        content_type = result.headers.get("content-type", "")
+        if "json" in content_type and result.content:
+            try:
+                body = orjson.loads(result.content)
+            except orjson.JSONDecodeError:
+                body = None
+    response_body = body if isinstance(body, dict) else {}
+    req_body = _body_as_dict(request_body)
+    sku = path_params.get("sku") or req_body.get("sku") or response_body.get("sku")
+    offer_id = (
+        path_params.get("offerId")
+        or req_body.get("offerId")
+        or response_body.get("offerId")
+    )
+    listing_id = response_body.get("listingId")
+    offers = response_body.get("offers")
+    if isinstance(offers, list) and offer_id is None:
+        for entry in offers:
+            if isinstance(entry, dict) and entry.get("offerId"):
+                offer_id = entry["offerId"]
+                break
+    return {"sku": sku, "offer_id": offer_id, "listing_id": listing_id}
+
+
+def _record_session_gate(
+    context: CliContext,
+    operation: OperationRecord,
+    test_warnings: list[str],
+) -> None:
+    """Best-effort ``gate`` record: which gates ran and their verdict.
+
+    Mirrors the ledger's fail-open discipline: a recorder fault can never change
+    control flow, so the whole call is wrapped. Emitted after the safety and
+    test-mode gates pass, so it records an allow, not a refusal.
+    """
+    try:
+        risk, _ = effective_risk(operation)
+        context.recorder.record_gate(
+            operation_id=operation.key,
+            classification=risk,
+            allow_write=context.allow_write,
+            yes=context.yes,
+            dry_run=context.dry_run,
+            test_mode=(
+                {"verdict": "pass", "checks": list(test_warnings)}
+                if context.test_mode
+                else None
+            ),
+            confirmation=_gate_confirmation(context, risk),
+        )
+    except Exception:  # noqa: BLE001 - recording must never break dispatch
+        pass
+
+
+def _gate_confirmation(context: CliContext, risk: str) -> dict[str, Any] | None:
+    """The confirmation the safety policy requires for this risk, if any.
+
+    Reads need none; writes need only ``--allow-write``; destructive/unknown
+    additionally need ``--yes`` (the confirmation gate). We surface whether a
+    prompt was in play and how it was answered so an audit can distinguish an
+    auto-confirmed write from a confirmed destructive op.
+    """
+    if risk not in {"destructive", "unknown"}:
+        return None
+    return {"prompted": True, "answer": "yes" if context.yes else None}
+
+
+def _record_session_op(
+    context: CliContext,
+    operation: OperationRecord,
+    result: Any,
+    path_params: dict[str, str],
+    query_params: dict[str, Any],
+    request_body: Any,
+) -> None:
+    """Best-effort ``op`` record after a successful dispatch.
+
+    Drains the recorder's :class:`AttemptCollector` for the attempts array and
+    extracts status / eBay request+rlog ids the same way ``--include-meta`` and
+    the test-run ledger do (``_request_id``/``_trace_id``). The reverse hint and
+    irreversibility flag come from the curated ``session`` table. Wrapped so a
+    recorder fault can never alter the successful operation's control flow.
+    """
+    try:
+        from . import session
+
+        risk, _ = effective_risk(operation)
+        attempts = context.recorder.attempts().drain()
+        elapsed_total = sum(int(a.get("elapsed_ms") or 0) for a in attempts)
+        status: int | None = None
+        request_id = rlog_id = None
+        method = operation.http_method
+        url: str | None = None
+        response_body: Any = None
+        if isinstance(result, httpx2.Response):
+            status = result.status_code
+            request_id = _request_id(result)
+            rlog_id = _trace_id(result)
+            if result.request is not None:
+                method = result.request.method
+                url = str(result.request.url)
+            content_type = result.headers.get("content-type", "")
+            if "json" in content_type and result.content:
+                try:
+                    response_body = orjson.loads(result.content)
+                except orjson.JSONDecodeError:
+                    response_body = None
+        ids = _extract_resource_ids(result, path_params, request_body)
+        context.recorder.record_op(
+            operation_id=operation.key,
+            classification=risk,
+            http={
+                "method": method,
+                "url": url,
+                "status": status,
+                "elapsed_ms_total": elapsed_total,
+                "attempts": attempts,
+            },
+            ebay={"request_id": request_id, "rlogid": rlog_id},
+            request_params=query_params,
+            request_body=request_body,
+            response_body=response_body if isinstance(response_body, dict) else None,
+            ids=ids,
+            test_run_id=context.test_run_id,
+            pre_state=None,
+            reverse_hint=session.reverse_hint_for(
+                operation.key, ids=ids, params=path_params
+            ),
+            irreversible=bool(session.irreversible_reason(operation.key)),
+            compensates=None,
+        )
+    except Exception:  # noqa: BLE001 - recording must never break dispatch
+        pass
+
+
+def _record_session_error(
+    context: CliContext,
+    operation: OperationRecord,
+    exc: ApiError | TransportError,
+) -> None:
+    """Best-effort ``error`` record for a classified API/transport failure."""
+    try:
+        attempts = context.recorder.attempts().drain()
+        elapsed_total = sum(int(a.get("elapsed_ms") or 0) for a in attempts)
+        status = getattr(exc, "status", None)
+        context.recorder.record_error(
+            operation_id=operation.key,
+            kind=getattr(exc, "classification", None) or type(exc).__name__,
+            message=str(exc),
+            status=status,
+            request_id=getattr(exc, "request_id", None),
+            http={
+                "method": operation.http_method,
+                "url": None,
+                "status": status,
+                "elapsed_ms_total": elapsed_total,
+                "attempts": attempts,
+            },
+        )
+    except Exception:  # noqa: BLE001 - recording must never break dispatch
+        pass
+
+
 def _record_test_event(
     context: CliContext,
     operation: OperationRecord,
@@ -931,42 +1122,15 @@ def _record_test_event(
     from .ledger import RunEvent, save_ledger
 
     status: int | None = None
-    body: Any = None
     request_id = trace_id = None
     if isinstance(result, httpx2.Response):
         status = result.status_code
         request_id = _request_id(result)
         trace_id = _trace_id(result)
-        content_type = result.headers.get("content-type", "")
-        if "json" in content_type and result.content:
-            try:
-                body = orjson.loads(result.content)
-            except orjson.JSONDecodeError:
-                body = None
-    response_body = body if isinstance(body, dict) else {}
-    req_body = _body_as_dict(request_body)
-
-    # Path params are keyed by wire name. publishOffer/withdrawOffer/
-    # deleteOffer carry ``offerId``; createOrReplaceInventoryItem/deleteInventoryItem
-    # carry ``sku``. The python names (offer_id/sku) are NOT the keys.
-    sku = (
-        path_params.get("sku")
-        or req_body.get("sku")
-        or response_body.get("sku")
-    )
-    offer_id = (
-        path_params.get("offerId")
-        or req_body.get("offerId")
-        or response_body.get("offerId")
-    )
-    listing_id = response_body.get("listingId")
-    # publishOffer returns {listingId, offers:[{offerId}]}; capture the offer too.
-    offers = response_body.get("offers")
-    if isinstance(offers, list) and offer_id is None:
-        for entry in offers:
-            if isinstance(entry, dict) and entry.get("offerId"):
-                offer_id = entry["offerId"]
-                break
+    ids = _extract_resource_ids(result, path_params, request_body)
+    sku = ids["sku"]
+    offer_id = ids["offer_id"]
+    listing_id = ids["listing_id"]
 
     base_dir = _ledger_base_dir(context)
     ledger = _load_or_create_ledger(context.test_run_id or "", base_dir=base_dir)
