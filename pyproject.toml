@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bidkit-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Command-line interface for the bidkit eBay SDK — every generated operation, callable from the shell."
 readme = "README.md"
 requires-python = ">=3.11"

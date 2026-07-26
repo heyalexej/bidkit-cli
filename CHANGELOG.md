@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0](https://github.com/heyalexej/bidkit-cli/compare/v0.2.0...v0.3.0) (2026-07-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **session:** `bidkit session gc --keep-days N` is replaced by `bidkit session prune`, which never deletes session files without --records and an explicit range.
+
+### Features
+
+* **capabilities:** answer what the current grant actually permits ([390310a](https://github.com/heyalexej/bidkit-cli/commit/390310a2d79b0a9f5feb7ea69679af48edd758c6))
+* **session:** record an auditable session log of every invocation ([24889e0](https://github.com/heyalexej/bidkit-cli/commit/24889e0fed49f91944aac10b1bdf7df146fc25f0))
+* **session:** replace gc with an explicit prune; nothing expires on its own ([1ec309b](https://github.com/heyalexej/bidkit-cli/commit/1ec309b26f867078dc92b6cb66ffd38598afa07d))
+
+
+### Bug Fixes
+
+* restore the documented git install path ([d486415](https://github.com/heyalexej/bidkit-cli/commit/d48641543bb41f32656ed33697914fcea19e3a72))
+* **session:** keep revert plans about decisions, not noise ([c6e7239](https://github.com/heyalexej/bidkit-cli/commit/c6e72397c3d974d04803e3f19fe86354ee9634c4))
+
+
+### Documentation
+
+* make the repo self-explanatory to an agent ([358a56a](https://github.com/heyalexej/bidkit-cli/commit/358a56a767009a87c645345871080ae3d32fea2b))
+
 ## [0.2.0](https://github.com/heyalexej/bidkit-cli/compare/v0.1.0...v0.2.0) (2026-07-26)
 
 
