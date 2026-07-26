@@ -12,7 +12,7 @@ from typing import Any
 
 import click
 
-from ..config import DEFAULT_CONFIG_PATH, keyset_env
+from ..config import keyset_env, resolve_config_path
 from ..context import CliContext
 from ..errors import ConfigError
 from ..rendering import emit_json
@@ -60,7 +60,7 @@ def auth_doctor(
 
 
 def _doctor_report(context: CliContext, config: Any) -> dict[str, Any]:
-    path = Path(context.config_path or DEFAULT_CONFIG_PATH).expanduser()
+    path = resolve_config_path(context.config_path)
     signing_ok = None
     if config.signing is not None:
         try:
@@ -258,7 +258,7 @@ def auth_login(
     """Mint an eBay user refresh token via the authorization-code flow.
 
     Reuses the SDK's ``EbayClient.exchange_code``; preserves the existing
-    ebay-cli config format. Sandbox/production keyset mismatch is detected
+    bidkit-cli config format. Sandbox/production keyset mismatch is detected
     before any browser opens.
     """
 
@@ -315,7 +315,7 @@ def auth_login(
                         "bidkit needs an application keyset (app_id, cert_id, "
                         "ru_name) to build the authorization URL. Create the "
                         "config file at "
-                        f"{Path(context.config_path or DEFAULT_CONFIG_PATH).expanduser()} "
+                        f"{resolve_config_path(context.config_path)} "
                         "with credentials from "
                         "https://developer.ebay.com/my/keys, then re-run "
                         "`bidkit auth login`."
@@ -348,7 +348,7 @@ def auth_login(
         "access_token_expiry": tokens.token_expiry.isoformat(),
     }
     if write_config:
-        target = Path(context.config_path or DEFAULT_CONFIG_PATH).expanduser()
+        target = resolve_config_path(context.config_path)
         _write_tokens(target, tokens)
         summary["wrote_config"] = str(target)
     emit_json(summary, pretty=context.pretty)
@@ -410,7 +410,7 @@ def _chmod_best_effort(target: Path, mode: int) -> None:
 def auth_init(ctx: click.Context) -> None:
     """Write a skeleton config so a fresh install can reach ``auth login``.
 
-    Creates ``~/.config/ebay-cli/config.json`` with placeholder credentials,
+    Creates ``~/.config/bidkit/config.json`` with placeholder credentials,
     0600 permissions, and inline instructions naming where each value comes
     from. After filling in the keyset, run ``bidkit auth login`` to mint a user
     token. Never overwrites an existing file without ``--force``.
@@ -424,7 +424,7 @@ def auth_init(ctx: click.Context) -> None:
     from ..errors import SafetyError
 
     context: CliContext = ctx.obj
-    target = Path(context.config_path or DEFAULT_CONFIG_PATH).expanduser()
+    target = resolve_config_path(context.config_path)
     if target.exists() and not context.force:
         raise SafetyError(
             f"config already exists at {target}; pass --force to overwrite.",

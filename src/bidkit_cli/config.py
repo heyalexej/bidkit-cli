@@ -3,11 +3,13 @@
 Precedence, highest first:
   1. command-line overrides (--environment, --marketplace, --timeout, ...);
   2. EBAY_* environment variables;
-  3. the config file selected by --config (ebay-cli JSON format);
+  3. the config file selected by --config (bidkit-cli JSON format);
   4. bidkit defaults.
 
-We do **not** introduce a second config format: the CLI continues to accept the
-existing ebay-cli ``config.json`` so users keep one credentials file.
+The config file lives at ``~/.config/bidkit/config.json``. A file at the older
+``~/.config/ebay-cli/config.json`` location (same JSON layout, from this tool's
+predecessor) is read as a silent fallback so existing setups keep working — but
+everything the CLI creates or documents uses the bidkit path.
 """
 
 from __future__ import annotations
@@ -19,7 +21,28 @@ from bidkit import EbayConfig
 
 from .errors import ConfigError
 
-DEFAULT_CONFIG_PATH = "~/.config/ebay-cli/config.json"
+DEFAULT_CONFIG_PATH = "~/.config/bidkit/config.json"
+LEGACY_CONFIG_PATH = "~/.config/ebay-cli/config.json"
+
+
+def resolve_config_path(config_path: str | None) -> Path:
+    """The config file to use: explicit > default > legacy fallback.
+
+    An explicit ``--config`` always wins. Otherwise the bidkit path is used when
+    it exists; if only the legacy predecessor file exists, that one is read (and
+    ``auth login --write-config`` will keep updating it, so credentials stay in
+    one file). When neither exists, the bidkit path is returned so anything that
+    *creates* a config (``auth init``) creates it at the modern location.
+    """
+    if config_path:
+        return Path(config_path).expanduser()
+    default = Path(DEFAULT_CONFIG_PATH).expanduser()
+    if default.exists():
+        return default
+    legacy = Path(LEGACY_CONFIG_PATH).expanduser()
+    if legacy.exists():
+        return legacy
+    return default
 
 
 def load_effective_config(
@@ -37,7 +60,7 @@ def load_effective_config(
     # 3+4: file (if present) then defaults. from_env() already layers env over
     # defaults, and from_file layers file over defaults. We start from the file
     # (authoritative for credentials), then apply env-derived fields, then CLI.
-    path = Path(config_path or DEFAULT_CONFIG_PATH).expanduser()
+    path = resolve_config_path(config_path)
 
     config: EbayConfig
     if path.exists():

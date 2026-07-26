@@ -190,7 +190,7 @@ def test_f3_stale_ids_are_gone_from_the_table() -> None:
     from bidkit_cli.safety import _OVERRIDES
 
     keys = {o.operation_key for o in _OVERRIDES}
-    # The dead ids called out in the review must no longer be present.
+    # Stale operation ids must no longer be present in the override table.
     assert "buy_marketplace_insights.search" not in keys
     assert "commerce_notification.test" not in keys
     assert "sell_recommendation.getListingRecommendations" not in keys

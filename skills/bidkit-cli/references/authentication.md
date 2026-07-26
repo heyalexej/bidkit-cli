@@ -1,11 +1,12 @@
 # Authentication & configuration
 
-`bidkit` reuses the SDK's OAuth flows and the existing **ebay-cli** config format. There is
+`bidkit` reuses the SDK's OAuth flows and the **bidkit-cli** JSON config format. There is
 one credentials file; the CLI adds no second format.
 
 ## Config file
 
-Default: `~/.config/ebay-cli/config.json`. Override with `--config PATH`.
+Default: `~/.config/bidkit/config.json` (a legacy `~/.config/ebay-cli/config.json` is read
+as a fallback when the default is absent). Override with `--config PATH`.
 
 ```json
 {

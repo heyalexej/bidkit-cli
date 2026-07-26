@@ -380,10 +380,10 @@ def test_p1_api_examples_text_mode(runner: CliRunner) -> None:
 
 
 def test_p1_api_call_accepts_canonical_key_offline() -> None:
-    """``api call`` dispatches any operation by canonical key (review acceptance).
+    """``api call`` dispatches any operation by canonical key.
 
-    This was broken pre-review (``run_operation`` was invoked without its
-    required ``dest_map``); a read op under a mocked transport proves the fix.
+    A read op under a mocked transport exercises the full dispatch path,
+    including the ``dest_map`` that ``run_operation`` requires.
     """
     import httpx
     from bidkit import EbayClient, EbayConfig

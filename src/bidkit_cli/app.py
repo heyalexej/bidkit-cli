@@ -176,7 +176,7 @@ def _global_options(func):
     """Attach the spec §8 global options to the root group callback."""
     options = [
         click.option("--config", "config_path", type=click.Path(), default=None,
-                     help="Config file (default ~/.config/ebay-cli/config.json)."),
+                     help="Config file (default ~/.config/bidkit/config.json)."),
         click.option("--environment", type=click.Choice(["production", "sandbox"]),
                      default=None),
         click.option("--marketplace", default=None, help="Override marketplace ID."),

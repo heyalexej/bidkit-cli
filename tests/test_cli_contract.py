@@ -678,3 +678,32 @@ def test_r8_select_ambiguous_key_is_an_error() -> None:
     # An exact or unique case-insensitive key never trips the ambiguity check.
     assert select_path({"itemId": 1, "item_id": 2}, "item_id") == 2
     assert select_path({"itemId": 1, "item_id": 2}, "ITEM_ID") == 2
+
+
+def test_config_path_resolution_prefers_bidkit_then_legacy(tmp_path, monkeypatch) -> None:
+    """Explicit --config wins; else ~/.config/bidkit, else the legacy ebay-cli
+    file; creation targets the bidkit path when neither exists."""
+    from bidkit_cli import config as cfg
+
+    home = tmp_path
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+    monkeypatch.setenv("HOME", str(home))
+
+    default = home / ".config" / "bidkit" / "config.json"
+    legacy = home / ".config" / "ebay-cli" / "config.json"
+
+    explicit = tmp_path / "explicit.json"
+    assert cfg.resolve_config_path(str(explicit)) == explicit
+
+    # Neither exists: the modern path is returned for creation.
+    assert cfg.resolve_config_path(None) == default
+
+    # Only the legacy predecessor exists: it is used.
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("{}")
+    assert cfg.resolve_config_path(None) == legacy
+
+    # Both exist: the bidkit path wins.
+    default.parent.mkdir(parents=True)
+    default.write_text("{}")
+    assert cfg.resolve_config_path(None) == default

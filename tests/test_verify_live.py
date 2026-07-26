@@ -132,8 +132,8 @@ def test_f1_compare_reports_server_added_fields() -> None:
 
 
 def test_f1_verify_live_no_longer_false_negatives_on_enrichment(manifest: Manifest) -> None:
-    """The exact scenario from the feedback: a fresh inventory write whose
-    availability is enriched with allocationByFormat must verify as matched."""
+    """A fresh inventory write whose availability is enriched with
+    allocationByFormat must verify as matched."""
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {
         "product": {"title": "T"},

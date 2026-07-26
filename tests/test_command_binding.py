@@ -1,7 +1,6 @@
 """Click-to-run_operation boundary: path binding, header routing, projections.
 
-These exercise the Click-to-:func:`run_operation` boundary the prior suite did
-not cover:
+These exercise the Click-to-:func:`run_operation` dispatch boundary:
 
 * positional path arguments bind to manifest wire names (camelCase and
   snake_case), and a universal ``--path`` can satisfy one without a positional.
@@ -284,7 +283,7 @@ def test_f5_committed_pages_show_effective_risk() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Manifest-driven command-adapter matrix (review: "before the next live smoke run")
+# Manifest-driven command-adapter matrix
 # ---------------------------------------------------------------------------
 
 def test_command_matrix_every_operation_help_is_invocable(manifest: Manifest) -> None:

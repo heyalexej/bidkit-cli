@@ -167,8 +167,8 @@ For live experiments, the CLI adds opt-in containment:
 
 ## Configuration and credentials
 
-- Credentials live in `~/.config/ebay-cli/config.json` — compatible with the
-  existing `ebay-cli` config format, so one credentials file serves both tools.
+- Credentials live in `~/.config/bidkit/config.json` (a file at the legacy
+  `~/.config/ebay-cli/` location is still read as a fallback).
 - `bidkit auth init` writes a `0600` skeleton with placeholders and next-step
   hints; fill in the keyset from <https://developer.ebay.com/my/keys>, then
   `bidkit auth login`.

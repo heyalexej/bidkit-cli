@@ -6,7 +6,7 @@ The CLI is a thin shell over `bidkit.EbayConfig`. One config file, used by both 
 
 1. Command-line flags: `--config`, `--environment`, `--marketplace`, `--timeout`, `--max-retries`.
 2. `EBAY_*` environment variables.
-3. The `--config` file (ebay-cli JSON format).
+3. The `--config` file (bidkit-cli JSON format).
 4. bidkit defaults.
 
 ## Inspect the effective config
@@ -26,7 +26,7 @@ bidkit --marketplace EBAY_US sell inventory get-inventory-items
 
 ## Config file fields
 
-| ebay-cli field            | EbayConfig field      |
+| config file field         | EbayConfig field      |
 |---------------------------|-----------------------|
 | `credentials.app_id`      | `app_id`              |
 | `credentials.cert_id`     | `cert_id`             |
