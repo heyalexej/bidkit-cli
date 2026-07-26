@@ -12,8 +12,20 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: bidkit-cli
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: bidkit-cli
+      # tool.uv.sources resolves bidkit from the sibling checkout (the layout
+      # bootstrap.sh documents); pin the tag the manifest was generated against.
+      - uses: actions/checkout@v4
+        with:
+          repository: heyalexej/bidkit
+          ref: "v0.2.0"
+          path: bidkit
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}

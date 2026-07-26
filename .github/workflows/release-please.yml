@@ -1,0 +1,17 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Manifest mode: version semantics live in release-please-config.json
+      # (bump-minor-pre-major keeps breaking changes at a minor bump pre-1.0).
+      - uses: googleapis/release-please-action@v5
