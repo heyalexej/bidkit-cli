@@ -40,12 +40,12 @@ jobs:
           uv venv --clear
           # [dev] brings datamodel-code-generator for the generator run below.
           uv pip install -e "bidkit-checkout[dev]"
-          # --no-sources: bidkit comes from the pinned checkout above, not the
-          # tool.uv.sources sibling path used for local development.
-          uv pip install --no-sources -e .[dev]
+          # bidkit comes from the pinned checkout above so the manifest is
+          # regenerated against the exact SDK generation it was produced from.
+          uv pip install -e .[dev]
 
-      # Run tools from the venv directly: `uv run` would re-resolve the project
-      # and trip over the tool.uv.sources sibling path that CI doesn't have.
+      # Run tools from the job venv directly: `uv run` would re-resolve the
+      # project and reinstall bidkit from PyPI over the pinned checkout above.
       - name: Regenerate manifest from the clean bidkit checkout
         run: .venv/bin/python scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
 

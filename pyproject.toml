@@ -46,11 +46,6 @@ dev = [
 [project.scripts]
 bidkit = "bidkit_cli.app:main"
 
-# Dev resolution for the documented sibling-checkout workspace (README/bootstrap):
-# the released package still depends on bidkit from PyPI via project.dependencies.
-[tool.uv.sources]
-bidkit = { path = "../bidkit" }
-
 [project.urls]
 Homepage = "https://github.com/heyalexej/bidkit-cli"
 Repository = "https://github.com/heyalexej/bidkit-cli"

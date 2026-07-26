@@ -34,7 +34,7 @@ uvx --from git+https://github.com/heyalexej/bidkit-cli bidkit --help
 ```
 
 > `pip install bidkit-cli` / a PyPI package is **not** available for now. The
-> dependency on the bidkit SDK is bounded to the `0.1.x` series because the
+> dependency on the bidkit SDK is bounded to the `0.2.x` series because the
 > command surface is generated against a specific SDK snapshot.
 
 ## Quick start
