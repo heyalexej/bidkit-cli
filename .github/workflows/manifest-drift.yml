@@ -39,7 +39,9 @@ jobs:
         run: |
           uv venv --clear
           uv pip install -e bidkit-checkout
-          uv pip install -e .[dev]
+          # --no-sources: bidkit comes from the pinned checkout above, not the
+          # tool.uv.sources sibling path used for local development.
+          uv pip install --no-sources -e .[dev]
 
       - name: Regenerate manifest from the clean bidkit checkout
         run: uv run scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
