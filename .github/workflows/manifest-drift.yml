@@ -37,7 +37,7 @@ jobs:
 
       - name: Install bidkit (editable) + CLI dev deps
         run: |
-          uv venv
+          uv venv --clear
           uv pip install -e bidkit-checkout
           uv pip install -e .[dev]
 
