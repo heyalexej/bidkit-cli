@@ -38,15 +38,18 @@ jobs:
       - name: Install bidkit (editable) + CLI dev deps
         run: |
           uv venv --clear
-          uv pip install -e bidkit-checkout
+          # [dev] brings datamodel-code-generator for the generator run below.
+          uv pip install -e "bidkit-checkout[dev]"
           # --no-sources: bidkit comes from the pinned checkout above, not the
           # tool.uv.sources sibling path used for local development.
           uv pip install --no-sources -e .[dev]
 
+      # Run tools from the venv directly: `uv run` would re-resolve the project
+      # and trip over the tool.uv.sources sibling path that CI doesn't have.
       - name: Regenerate manifest from the clean bidkit checkout
-        run: uv run scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
+        run: .venv/bin/python scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
 
       - name: Manifest/resource parity + tests
         run: |
-          uv run pytest -q
-          uv run ruff check src tests
+          .venv/bin/python -m pytest -q
+          .venv/bin/python -m ruff check src tests

@@ -79,7 +79,7 @@ def main() -> int:
     # 4. Drift check: the regenerated manifest must match what was committed.
     diff = subprocess.run(
         ["git", "diff", "--exit-code", "--", str(MANIFEST)],
-        cwd=CLI_ROOT.parent,
+        cwd=CLI_ROOT,
     )
     if diff.returncode == 0:
         print("manifest is up to date (no drift)")
