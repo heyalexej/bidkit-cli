@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 from click.testing import CliRunner
 
@@ -42,7 +42,7 @@ def _ctx(manifest: Manifest, handler, **ctx_kwargs) -> CliContext:
             access_token="t",
             marketplace_id=ctx_kwargs.pop("marketplace_id", "EBAY_DE"),
         ),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -90,13 +90,13 @@ def test_f1_main_exits_nonzero_on_unmet_expectation(manifest: Manifest) -> None:
     """
     from bidkit import EbayClient, EbayConfig
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())  # active, not not_listed
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())  # active, not not_listed
+        return httpx2.Response(404)
 
     mock = EbayClient(EbayConfig(access_token="t", marketplace_id="EBAY_DE"),
-                      http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+                      http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
     argv = [
         "bidkit", "sell", "inventory", "verify-public", "--listing-id", "1",
         "--expect", "not_listed", "--wait", "0", "--format", "json",
@@ -114,13 +114,13 @@ def test_f1_main_exits_zero_on_met_expectation(manifest: Manifest) -> None:
     """A met expectation still exits 0 through the real entry point."""
     from bidkit import EbayClient, EbayConfig
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())
+        return httpx2.Response(404)
 
     mock = EbayClient(EbayConfig(access_token="t", marketplace_id="EBAY_DE"),
-                      http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+                      http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
     argv = [
         "bidkit", "sell", "inventory", "verify-public", "--listing-id", "1",
         "--expect", "active", "--wait", "0", "--format", "json",
@@ -148,8 +148,8 @@ def test_f2_publish_records_offerid_wire_name(manifest: Manifest, tmp_path: Path
 
     op = manifest.get("sell_inventory.publishOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"listingId": "L1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"listingId": "L1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_run_id="run-wire")
     with patch("bidkit_cli.ledger.default_ledger_dir", return_value=tmp_path):
@@ -172,8 +172,8 @@ def test_f2_createoffer_records_sku_from_body(manifest: Manifest, tmp_path: Path
     op = manifest.get("sell_inventory.createOffer")
     body = {"sku": "SKU-FROM-BODY", "listingDescription": "TEST ONLY — x"}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"offerId": "O1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, json={"offerId": "O1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_run_id="run-sku")
     with patch("bidkit_cli.ledger.default_ledger_dir", return_value=tmp_path):
@@ -192,8 +192,8 @@ def test_f2_autocreates_ledger_without_init(manifest: Manifest, tmp_path: Path) 
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "V", "description": "TEST ONLY run-auto-create"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
                test_run_id="run-auto-create")
@@ -225,14 +225,14 @@ def test_f2_cleanup_records_events_and_advances_status(manifest: Manifest, tmp_p
                               offer_id="O1", listing_id="L1"))
     save_ledger(ledger, base_dir=tmp_path)
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         path = request.url.path
         if "/item/" in path:  # Browse getItem -> an ENDED/retained public record
             past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
-            return httpx.Response(200, json=_browse_item(end=past))
+            return httpx2.Response(200, json=_browse_item(end=past))
         if "/inventory_item/" in path or "/offer/" in path or "/offer_group/" in path:
-            return httpx.Response(204 if request.method in {"PUT", "POST"} else 404)
-        return httpx.Response(404)
+            return httpx2.Response(204 if request.method in {"PUT", "POST"} else 404)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_run_id="run-clean")
     with patch("bidkit_cli.ledger.default_ledger_dir", return_value=tmp_path):
@@ -305,8 +305,8 @@ def test_f4_write_needs_only_allow_write_not_expert(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOffer")
     body = {"listingDescription": "TEST ONLY — nothing shipped."}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"offerId": "O1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, json={"offerId": "O1"})
 
     # allow_write=True but allow_write_expert=False, yes=False: must succeed now.
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True)
@@ -318,8 +318,8 @@ def test_f4_nonidempotency_hint_uses_effective_risk(manifest: Manifest) -> None:
     """A publishOffer (effective risk write) 400 carries the non-idempotency note."""
     op = manifest.get("sell_inventory.publishOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, json={"errors": [{"errorId": 99999, "message": "boom"}]})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, json={"errors": [{"errorId": 99999, "message": "boom"}]})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True)
     with pytest.raises(ApiError) as exc:
@@ -454,7 +454,7 @@ def test_f8_html_upstream_error_bounds_details(manifest: Manifest) -> None:
 
     op = manifest.get("buy_browse.getItem")
     html = "<html>" + ("x" * 5000) + "</html>"
-    response = httpx.Response(500, content=html.encode(),
+    response = httpx2.Response(500, content=html.encode(),
                               headers={"content-type": "text/html"})
     exc = EbayAPIError.from_response(response)
     err = _classified_api_error(op, exc)

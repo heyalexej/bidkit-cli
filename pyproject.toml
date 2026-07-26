@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bidkit-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Command-line interface for the bidkit eBay SDK — every generated operation, callable from the shell."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,8 +28,9 @@ dependencies = [
   # Bounded to the 0.1.x series: the command surface is generated from a
   # specific bidkit generation snapshot, and a future minor/major can rename
   # methods/services. Bump intentionally when the manifest is regenerated.
-  "bidkit>=0.1.1,<0.2",
+  "bidkit>=0.2.0,<0.3",
   "click>=8.1,<9",
+  "httpx2>=2.9",
   "rich>=13,<15",
   "orjson>=3.10",
 ]
@@ -44,6 +45,11 @@ dev = [
 # distribution is bidkit-cli so library users don't pull Click/Rich transitively.
 [project.scripts]
 bidkit = "bidkit_cli.app:main"
+
+# Dev resolution for the documented sibling-checkout workspace (README/bootstrap):
+# the released package still depends on bidkit from PyPI via project.dependencies.
+[tool.uv.sources]
+bidkit = { path = "../bidkit" }
 
 [project.urls]
 Homepage = "https://github.com/heyalexej/bidkit-cli"

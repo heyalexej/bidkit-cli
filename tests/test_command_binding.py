@@ -24,7 +24,7 @@ import json
 from contextlib import redirect_stdout
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 from click.testing import CliRunner
@@ -112,16 +112,16 @@ def test_f2_hyphenated_header_option_does_not_crash(manifest: Manifest) -> None:
     assert preview["headers"] == {"Accept-Language": "de"}
 
 
-def _recording_ctx(manifest: Manifest, handler) -> tuple[CliContext, list[httpx.Request]]:
-    seen: list[httpx.Request] = []
+def _recording_ctx(manifest: Manifest, handler) -> tuple[CliContext, list[httpx2.Request]]:
+    seen: list[httpx2.Request] = []
 
-    def _h(request: httpx.Request) -> httpx.Response:
+    def _h(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
         return handler(request)
 
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(_h)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(_h)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -134,7 +134,7 @@ def _recording_ctx(manifest: Manifest, handler) -> tuple[CliContext, list[httpx.
 
 def test_f2_named_header_reaches_the_wire(manifest: Manifest) -> None:
     """A named header option must be sent on the actual HTTP request."""
-    ctx, seen = _recording_ctx(manifest, lambda req: httpx.Response(200, json={"ok": True}))
+    ctx, seen = _recording_ctx(manifest, lambda req: httpx2.Response(200, json={"ok": True}))
     op = manifest.get("buy_browse.getItem")
     buf = io.StringIO()
     with redirect_stdout(buf):

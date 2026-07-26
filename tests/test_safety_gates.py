@@ -16,7 +16,7 @@ import io
 import json
 from contextlib import redirect_stdout
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 from click.testing import CliRunner
@@ -82,7 +82,7 @@ def test_p0_report_safety_error_exits_7(manifest: Manifest) -> None:
 def _ctx(manifest: Manifest, handler) -> CliContext:
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -98,11 +98,11 @@ def _ctx(manifest: Manifest, handler) -> CliContext:
 def test_p0_unknown_dispatches_with_both_gates(manifest: Manifest) -> None:
     """An unclassified POST really leaves the process only under both gates."""
     op = manifest.get("cancellation.checkCancellationEligibility")
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"eligible": True})
+        return httpx2.Response(200, json={"eligible": True})
 
     ctx = _ctx(manifest, handler)
     buf = io.StringIO()
@@ -117,7 +117,7 @@ def test_p0_unknown_dispatches_with_both_gates(manifest: Manifest) -> None:
 
 def test_p0_unknown_blocked_without_expert_gate_in_execute(manifest: Manifest) -> None:
     op = manifest.get("cancellation.checkCancellationEligibility")
-    ctx = _ctx(manifest, lambda r: httpx.Response(200, json={}))
+    ctx = _ctx(manifest, lambda r: httpx2.Response(200, json={}))
     ctx.allow_write_expert = False
     ctx.yes = True
     ctx.allow_write = True
@@ -130,11 +130,11 @@ def test_p0_unknown_blocked_without_expert_gate_in_execute(manifest: Manifest) -
 
 def test_p0_dry_run_needs_no_gate_and_never_dispatches(manifest: Manifest) -> None:
     op = manifest.get("cancellation.checkCancellationEligibility")
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
     ctx = _ctx(manifest, handler)
     ctx.allow_write_expert = False
@@ -385,18 +385,18 @@ def test_p1_api_call_accepts_canonical_key_offline() -> None:
     A read op under a mocked transport exercises the full dispatch path,
     including the ``dest_map`` that ``run_operation`` requires.
     """
-    import httpx
+    import httpx2
     from bidkit import EbayClient, EbayConfig
 
     from bidkit_cli.context import CliContext
     from bidkit_cli.manifest import load_manifest
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"orders": [], "total": 0})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"orders": [], "total": 0})
 
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = load_manifest()
@@ -421,8 +421,8 @@ def test_p1_api_call_accepts_canonical_key_offline() -> None:
 def test_p2_include_meta_wraps_payload_with_request_id(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={"x-ebay-c-request-id": "REQ-123"},
         )
@@ -450,8 +450,8 @@ def test_p2_include_meta_wraps_payload_with_request_id(manifest: Manifest) -> No
 def test_p2_include_meta_off_is_plain_payload(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"sku": "A"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"sku": "A"})
 
     ctx = _ctx(manifest, handler)
     ctx.allow_write_expert = False
@@ -468,8 +468,8 @@ def test_p2_include_meta_off_is_plain_payload(manifest: Manifest) -> None:
 def test_p2_include_meta_never_leaks_secrets(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={"set-cookie": "SECRET", "authorization": "Bearer xyz"},
         )
@@ -490,8 +490,8 @@ def test_p2_include_meta_never_leaks_secrets(manifest: Manifest) -> None:
 def test_p2_include_meta_with_select_applies_to_data(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"sku": "A", "title": "t"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"sku": "A", "title": "t"})
 
     ctx = _ctx(manifest, handler)
     ctx.allow_write_expert = False

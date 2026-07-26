@@ -21,7 +21,7 @@ import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 from click.testing import CliRunner
@@ -42,7 +42,7 @@ from bidkit_cli.workflows import (
 def _ctx(manifest: Manifest, handler, **ctx_kwargs) -> CliContext:
     client = EbayClient(
         EbayConfig(access_token="t", marketplace_id=ctx_kwargs.pop("marketplace_id", "EBAY_US")),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -167,9 +167,9 @@ def test_f2_merge_preserves_omitted_fields(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
     put_body: dict = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "GET":
-            return httpx.Response(200, json={
+            return httpx2.Response(200, json={
                 "offerId": "O1",
                 "listingPolicies": {"fulfillmentPolicyId": "FP1"},
                 "pricingSummary": {"price": {"value": "10.00", "currency": "USD"}},
@@ -178,7 +178,7 @@ def test_f2_merge_preserves_omitted_fields(manifest: Manifest) -> None:
                 "hideBuyerDetails": False,
             })
         put_body.update(json.loads(request.content))
-        return httpx.Response(200, json={"offerId": "O1"})
+        return httpx2.Response(200, json={"offerId": "O1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, merge=True)
     buf = io.StringIO()
@@ -198,10 +198,10 @@ def test_f2_merge_over_create_passes_through(manifest: Manifest) -> None:
     """A 404 on the read (the 'create' half) leaves the provided body intact."""
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "GET":
-            return httpx.Response(404, json={"errors": []})
-        return httpx.Response(204)
+            return httpx2.Response(404, json={"errors": []})
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, merge=True)
     body = {"product": {"title": "New"}}
@@ -233,8 +233,8 @@ def test_f2_error_after_mutation_hint(manifest: Manifest) -> None:
     """A failed write carries a non-idempotent-retry hint (state may have changed)."""
     op = manifest.get("sell_inventory.updateOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, json={"errors": [{"errorId": 99999, "message": "boom"}]})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, json={"errors": [{"errorId": 99999, "message": "boom"}]})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True)
     with pytest.raises(ApiError) as exc:
@@ -255,18 +255,18 @@ def test_f3_verify_live_reports_convergence(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
     calls = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         calls["n"] += 1
         if request.method == "PUT":
-            return httpx.Response(200, json={"offerId": "O1"})
+            return httpx2.Response(200, json={"offerId": "O1"})
         # First readback lags (old description), second matches.
         if calls["n"] == 2:
-            return httpx.Response(200, json={
+            return httpx2.Response(200, json={
                 "offerId": "O1",
                 "pricingSummary": {"price": {"value": "12.50", "currency": "USD"}},
                 "listingDescription": "OLD",
             })
-        return httpx.Response(200, json={
+        return httpx2.Response(200, json={
             "offerId": "O1",
             "pricingSummary": {"price": {"value": "12.50", "currency": "USD"}},
             "listingDescription": "NEW",
@@ -288,11 +288,11 @@ def test_f3_verify_live_reports_convergence(manifest: Manifest) -> None:
 def test_f3_verify_live_reports_unmatched(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
-            return httpx.Response(200, json={"offerId": "O1"})
+            return httpx2.Response(200, json={"offerId": "O1"})
         # Readback never reflects the requested price.
-        return httpx.Response(200, json={
+        return httpx2.Response(200, json={
             "offerId": "O1",
             "pricingSummary": {"price": {"value": "10.00", "currency": "USD"}},
         })
@@ -314,7 +314,7 @@ def test_f3_verify_live_reports_unmatched(manifest: Manifest) -> None:
 
 def test_f4_title_over_limit_rejected_before_dispatch(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), marketplace_id="EBAY_DE")
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), marketplace_id="EBAY_DE")
     long_title = "A" * 81
     with pytest.raises(ValidationError_) as exc:
         execute(ctx, op, path_params={"sku": "SKU"}, query_params={},
@@ -326,7 +326,7 @@ def test_f4_title_over_limit_rejected_before_dispatch(manifest: Manifest) -> Non
 
 def test_f4_title_at_limit_passes(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), marketplace_id="EBAY_DE",
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), marketplace_id="EBAY_DE",
                allow_write=True, yes=True)
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -363,8 +363,8 @@ def test_f5_known_publish_errors_get_hints(code: int) -> None:
 def test_f5_missing_aspect_hint_names_taxonomy(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.publishOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, json={"errors": [{"errorId": 25002}]})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, json={"errors": [{"errorId": 25002}]})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True,
                marketplace_id="EBAY_DE")
@@ -505,7 +505,7 @@ def test_f7_schema_for_nonexistent_model(runner: CliRunner) -> None:
 
 def test_f8_too_many_images_rejected(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), allow_write=True, yes=True)
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True)
     urls = [f"https://i.ebayimg.com/images/g/{i}.JPG" for i in range(25)]
     with pytest.raises(ValidationError_) as exc:
         execute(ctx, op, path_params={"sku": "SKU"}, query_params={},
@@ -517,7 +517,7 @@ def test_f8_too_many_images_rejected(manifest: Manifest) -> None:
 
 def test_f8_twenty_four_images_pass(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), allow_write=True, yes=True)
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True)
     urls = [f"https://i.ebayimg.com/images/g/{i}.JPG" for i in range(24)]
     buf = io.StringIO()
     with redirect_stdout(buf):

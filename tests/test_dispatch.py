@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 
@@ -31,12 +31,12 @@ def _run(ctx: CliContext, op, **call_kwargs) -> str:
 
 
 def test_get_dispatches_and_renders_json(manifest: Manifest) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"sku": "A", "title": "t"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"sku": "A", "title": "t"})
 
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -57,15 +57,15 @@ def test_get_dispatches_and_renders_json(manifest: Manifest) -> None:
 
 
 def test_query_params_encoded_on_request(manifest: Manifest) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"inventoryItems": [], "total": 0})
+        return httpx2.Response(200, json={"inventoryItems": [], "total": 0})
 
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -116,12 +116,12 @@ def test_request_body_validated_against_model(cli_ctx: CliContext, manifest: Man
 
 
 def test_api_error_translated(cli_ctx: CliContext, manifest: Manifest) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(422, json={"errors": [{"message": "bad value"}]})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(422, json={"errors": [{"message": "bad value"}]})
 
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     cli_ctx._client = client
     cli_ctx._config = client.config

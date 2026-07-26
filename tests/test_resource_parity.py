@@ -8,7 +8,7 @@ the committed manifest even when the dependency range is still satisfied.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 
@@ -17,7 +17,7 @@ from bidkit import EbayClient, EbayConfig
 def client():
     return EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200))),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(lambda r: httpx2.Response(200))),
     )
 
 

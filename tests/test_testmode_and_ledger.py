@@ -27,7 +27,7 @@ import json
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from click.testing import CliRunner
 
@@ -54,7 +54,7 @@ def _ctx(manifest: Manifest, handler, **ctx_kwargs) -> CliContext:
             access_token="t",
             marketplace_id=ctx_kwargs.pop("marketplace_id", "EBAY_DE"),
         ),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -141,10 +141,10 @@ def test_f5_verify_live_live_shaped_enrichment_fixture(manifest: Manifest) -> No
         "availability": {"shipToLocationAvailability": {"quantity": 1}},
     }
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
-            return httpx.Response(204)
-        return httpx.Response(200, json={
+            return httpx2.Response(204)
+        return httpx2.Response(200, json={
             "sku": "RADIO",
             "locale": "de_DE",
             "product": {"title": "Vintage Radio",
@@ -207,12 +207,12 @@ def test_f1_stale_after_delete_after_seller_cleanup(manifest: Manifest) -> None:
     """The headline scenario: seller API deleted, Browse still returns the item."""
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())
+            return httpx2.Response(200, json=_browse_item())
         if "/inventory_item/" in request.url.path:
-            return httpx.Response(404)  # seller deleted
-        return httpx.Response(404)
+            return httpx2.Response(404)  # seller deleted
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(
@@ -244,10 +244,10 @@ def test_f1_stale_after_delete_after_seller_cleanup(manifest: Manifest) -> None:
 def test_f1_visible_meets_expectation(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="visible", wait_seconds=0.0)
@@ -259,10 +259,10 @@ def test_f1_visible_meets_expectation(manifest: Manifest) -> None:
 def test_f1_not_found_meets_expectation(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(404)
-        return httpx.Response(404)
+            return httpx2.Response(404)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="9", expect_browse="not_found", wait_seconds=0.0)
@@ -276,10 +276,10 @@ def test_f1_http_403_is_blocked_not_absent(manifest: Manifest) -> None:
     """HTTP 403 (anti-automation throttle) must never read as proof of absence."""
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(403)
-        return httpx.Response(404)
+            return httpx2.Response(403)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="visible", wait_seconds=0.0)
@@ -292,10 +292,10 @@ def test_f1_http_403_is_blocked_not_absent(manifest: Manifest) -> None:
 def test_f1_blocked_with_budget_becomes_timeout(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(403)
-        return httpx.Response(404)
+            return httpx2.Response(403)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="visible",
@@ -310,12 +310,12 @@ def test_f1_not_yet_visible_after_publish(manifest: Manifest) -> None:
     """Just published: browse 404 but seller present -> not_yet_visible."""
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(404)
+            return httpx2.Response(404)
         if "/inventory_item/" in request.url.path:
-            return httpx.Response(200, json={"sku": "S"})
-        return httpx.Response(404)
+            return httpx2.Response(200, json={"sku": "S"})
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", sku="S", expect_browse="visible",
@@ -328,12 +328,12 @@ def test_f4_field_level_mismatches_reported(manifest: Manifest) -> None:
     """A 200 with wrong content is caught field-by-field, not just by visibility."""
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item(
+            return httpx2.Response(200, json=_browse_item(
                 title="WRONG", price="9.99", currency="USD", category="999",
                 images=1, description="no marker", buying=("AUCTION",)))
-        return httpx.Response(404)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(
@@ -485,8 +485,8 @@ def test_f3_marker_required_in_test_mode(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "no marker here"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True)
     with pytest.raises(ValidationError_) as exc:
@@ -498,8 +498,8 @@ def test_f3_marker_passes_when_present(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY — nothing shipped"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True)
     out, _ = _run_capturing(ctx, op, {"sku": "SKU"}, body)
@@ -510,8 +510,8 @@ def test_f3_scrambled_provenance_requires_consent(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY nothing"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     provenance = {"title": "SRC-A", "image": "SRC-B"}  # two sources
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
@@ -526,8 +526,8 @@ def test_f3_scrambled_consent_warns_and_passes(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY nothing"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     provenance = {"title": "SRC-A", "image": "SRC-B"}
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
@@ -544,8 +544,8 @@ def test_f3_single_source_provenance_needs_no_consent(manifest: Manifest) -> Non
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY nothing"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     provenance = {"title": "SRC-A", "image": "SRC-A"}  # one source, not scrambled
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
@@ -559,8 +559,8 @@ def test_f3_gate_does_not_engage_without_test_mode(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "real listing, no marker"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True)  # no test_mode
     out, _ = _run_capturing(ctx, op, {"sku": "SKU"}, body)
@@ -688,15 +688,15 @@ def test_f6_cleanup_report_command_with_mock_client(
                        test_skus=["AAAAA"], listing_ids=["L1"])
     save_ledger(ledger, base_dir=tmp_path)
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/inventory_item/" in request.url.path:
-            return httpx.Response(404)  # seller deleted
+            return httpx2.Response(404)  # seller deleted
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())  # still public (stale)
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())  # still public (stale)
+        return httpx2.Response(404)
 
     client = EbayClient(EbayConfig(access_token="t", marketplace_id="EBAY_DE"),
-                        http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+                        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
     # Inject the mock client into every CliContext the runner builds, regardless
     # of how it resolves config (the command only needs the client + manifest).
     monkeypatch.setattr(CliContext, "client", property(lambda self: client))

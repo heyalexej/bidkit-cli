@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import orjson
 from bidkit.errors import (
     EbayAPIError,
@@ -347,7 +347,7 @@ def _dispatch_with_retry(
             raise _classified_api_error(operation, exc) from exc
         except EbayTransportError as exc:
             raise _classified_transport_error(operation, exc) from exc
-        if isinstance(result, httpx.Response) and result.status_code >= 400:
+        if isinstance(result, httpx2.Response) and result.status_code >= 400:
             # raw_response=True suppresses the SDK's own status>=400 raise;
             # translate here to keep the exit-code / error contract uniform and
             # attach the stable classification.
@@ -820,7 +820,7 @@ def _stream_to_file(
 
 
 def _render_result(context: CliContext, operation: OperationRecord, result: Any) -> None:
-    if not isinstance(result, httpx.Response):
+    if not isinstance(result, httpx2.Response):
         emit_json(result, pretty=context.pretty)
         return
 
@@ -933,7 +933,7 @@ def _record_test_event(
     status: int | None = None
     body: Any = None
     request_id = trace_id = None
-    if isinstance(result, httpx.Response):
+    if isinstance(result, httpx2.Response):
         status = result.status_code
         request_id = _request_id(result)
         trace_id = _trace_id(result)
@@ -1068,7 +1068,7 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _request_id(response: httpx.Response) -> str | None:
+def _request_id(response: httpx2.Response) -> str | None:
     """eBay's per-request id (either request-id header has been observed)."""
     return (
         response.headers.get("x-ebay-c-request-id")
@@ -1076,7 +1076,7 @@ def _request_id(response: httpx.Response) -> str | None:
     )
 
 
-def _trace_id(response: httpx.Response) -> str | None:
+def _trace_id(response: httpx2.Response) -> str | None:
     """The traffic/edge trace id (``x-traffic-request-id``).
 
     Distinct from the per-request id: some eBay responses expose this edge
@@ -1086,7 +1086,7 @@ def _trace_id(response: httpx.Response) -> str | None:
     return response.headers.get("x-traffic-request-id")
 
 
-def _response_meta(operation: OperationRecord, response: httpx.Response) -> dict[str, Any]:
+def _response_meta(operation: OperationRecord, response: httpx2.Response) -> dict[str, Any]:
     """Traceability envelope for --include-meta. No secrets, ever.
 
     ``request_id`` falls back to the traffic trace id when eBay did not return a
@@ -1106,7 +1106,7 @@ def _response_meta(operation: OperationRecord, response: httpx.Response) -> dict
     }
 
 
-def _filter_headers(headers: httpx.Headers) -> dict[str, str]:
+def _filter_headers(headers: httpx2.Headers) -> dict[str, str]:
     """Redact sensitive response headers in raw mode.
 
     Uses the same shared policy as dry-run so a raw response never echoes a

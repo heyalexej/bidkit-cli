@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 
@@ -17,28 +17,28 @@ def manifest() -> Manifest:
 
 @pytest.fixture
 def mock_client():
-    """An EbayClient over an httpx.MockTransport that returns 200/{} by default."""
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"ok": True, "method": request.method,
+    """An EbayClient over an httpx2.MockTransport that returns 200/{} by default."""
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"ok": True, "method": request.method,
                                         "path": request.url.path})
     return EbayClient(
         EbayConfig(access_token="token"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
 
 
 @pytest.fixture
 def recording_client():
     """A client that records the requests it sees and echoes them back."""
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"method": request.method, "url": str(request.url)})
+        return httpx2.Response(200, json={"method": request.method, "url": str(request.url)})
 
     client = EbayClient(
         EbayConfig(access_token="token", marketplace_id="EBAY_DE"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     return client, seen
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "sdk_package": "bidkit",
-  "sdk_version": "0.1.1",
+  "sdk_version": "0.2.0",
   "generator_version": "2026-01",
   "operation_count": 455,
   "service_count": 41,

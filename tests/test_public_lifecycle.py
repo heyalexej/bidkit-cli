@@ -28,7 +28,7 @@ from datetime import UTC
 from pathlib import Path
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 from click.testing import CliRunner
 
@@ -55,7 +55,7 @@ def _ctx(manifest: Manifest, handler, **ctx_kwargs) -> CliContext:
             access_token="t",
             marketplace_id=ctx_kwargs.pop("marketplace_id", "EBAY_DE"),
         ),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -111,11 +111,11 @@ def test_f1_verify_public_sends_restful_id_and_reports_both(manifest: Manifest) 
 
     seen: list[str] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
             seen.append(request.url.path.rsplit("/", 1)[-1])
-            return httpx.Response(200, json=_browse_item(item_id="v1|358845110146|0"))
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item(item_id="v1|358845110146|0"))
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="358845110146", expect_browse="active",
@@ -148,8 +148,8 @@ def test_f2_create_offer_listing_description_satisfies_gate(manifest: Manifest) 
     op = manifest.get("sell_inventory.createOffer")
     body = {"listingDescription": "TEST ONLY — nothing will be shipped."}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"offerId": "O1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, json={"offerId": "O1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, allow_write_expert=True,
                yes=True, test_mode=True)
@@ -162,8 +162,8 @@ def test_f2_create_offer_without_marker_refused(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOffer")
     body = {"listingDescription": "real listing, no marker"}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"offerId": "O1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, json={"offerId": "O1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True)
     with pytest.raises(ValidationError_) as exc:
@@ -176,8 +176,8 @@ def test_f2_create_offer_legacy_description_still_supported(manifest: Manifest) 
     op = manifest.get("sell_inventory.createOffer")
     body = {"description": "TEST ONLY — nothing will be shipped."}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"offerId": "O1"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(201, json={"offerId": "O1"})
 
     ctx = _ctx(manifest, handler, allow_write=True, allow_write_expert=True,
                yes=True, test_mode=True)
@@ -197,15 +197,15 @@ def test_f3_not_listed_when_seller_deleted_and_public_ended(manifest: Manifest) 
 
     past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item(
+            return httpx2.Response(200, json=_browse_item(
                 end=past,
                 availability={"estimatedAvailabilityStatus": "OUT_OF_STOCK",
                               "estimatedRemainingQuantity": 0}))
         if "/inventory_item/" in request.url.path:
-            return httpx.Response(404)
-        return httpx.Response(404)
+            return httpx2.Response(404)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", sku="AAAAA",
@@ -223,12 +223,12 @@ def test_f3_public_ended_when_seller_present(manifest: Manifest) -> None:
 
     past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item(end=past))
+            return httpx2.Response(200, json=_browse_item(end=past))
         if "/inventory_item/" in request.url.path:
-            return httpx.Response(200, json={"sku": "S"})
-        return httpx.Response(404)
+            return httpx2.Response(200, json={"sku": "S"})
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", sku="S", expect_browse="active",
@@ -242,10 +242,10 @@ def test_f3_public_ended_when_seller_present(manifest: Manifest) -> None:
 def test_f3_active_expectation_met_by_purchasable_item(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())  # no end date -> active
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())  # no end date -> active
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="active", wait_seconds=0.0)
@@ -261,10 +261,10 @@ def test_f3_visible_includes_retained_history(manifest: Manifest) -> None:
 
     past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item(end=past))
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item(end=past))
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="visible", wait_seconds=0.0)
@@ -284,10 +284,10 @@ def test_f4_auto_records_publish_to_ledger(manifest: Manifest, tmp_path: Path) -
 
     op = manifest.get("sell_inventory.publishOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         # Real publishOffer responses carry only listingId (+ warnings); the
         # offer id must come from the path param, not an invented body field.
-        return httpx.Response(200, json={"listingId": "358845110146"})
+        return httpx2.Response(200, json={"listingId": "358845110146"})
 
     ctx = _ctx(manifest, handler, allow_write=True, allow_write_expert=True,
                yes=True, test_run_id="run-auto")
@@ -341,8 +341,8 @@ def test_f5_run_id_not_carried_is_refused(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY nothing"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
                test_run_id="RUN-X")
@@ -355,8 +355,8 @@ def test_f5_run_id_in_description_passes(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY run RUN-X"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
                test_run_id="RUN-X")
@@ -368,8 +368,8 @@ def test_f5_override_allows_untracked(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
     body = {"product": {"title": "Vase", "description": "TEST ONLY nothing"}}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(204)
 
     ctx = _ctx(manifest, handler, allow_write=True, yes=True, test_mode=True,
                test_run_id="RUN-X", allow_untracked_test_run=True)
@@ -384,12 +384,12 @@ def test_f5_override_allows_untracked(manifest: Manifest) -> None:
 def test_f7_verify_public_command_exits_nonzero_on_unmet(manifest: Manifest,
                                                         runner: CliRunner) -> None:
     """verify-public exits 1 when the expectation is not met (assertion/CI mode)."""
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())  # active, not not_listed
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())  # active, not not_listed
+        return httpx2.Response(404)
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx2.Client(transport=httpx2.MockTransport(handler))
     from bidkit import EbayClient, EbayConfig
     mock = EbayClient(EbayConfig(access_token="t", marketplace_id="EBAY_DE"),
                       http_client=client)
@@ -407,10 +407,10 @@ def test_f7_verify_public_command_exits_nonzero_on_unmet(manifest: Manifest,
 def test_f7_content_verified_only_on_observed_200(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(404)
-        return httpx.Response(404)
+            return httpx2.Response(404)
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="not_found", wait_seconds=0.0)
@@ -425,10 +425,10 @@ def test_f7_content_verified_only_on_observed_200(manifest: Manifest) -> None:
 def test_f8_default_projection_drops_legal_blob(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="active", wait_seconds=0.0)
@@ -441,10 +441,10 @@ def test_f8_default_projection_drops_legal_blob(manifest: Manifest) -> None:
 def test_f8_full_retains_raw_body(manifest: Manifest) -> None:
     from bidkit_cli.workflows import verify_public
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if "/item/" in request.url.path:
-            return httpx.Response(200, json=_browse_item())
-        return httpx.Response(404)
+            return httpx2.Response(200, json=_browse_item())
+        return httpx2.Response(404)
 
     ctx = _ctx(manifest, handler)
     report = verify_public(ctx, listing_id="L1", expect_browse="active",
@@ -499,9 +499,9 @@ def test_taxonomy_leads_500_not_retried_due_to_policy(manifest: Manifest) -> Non
     op = manifest.get("sell_leads.getAllClassifiedLeads")
     calls = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         calls["n"] += 1
-        return httpx.Response(500, content=b"<html>Access is denied</html>",
+        return httpx2.Response(500, content=b"<html>Access is denied</html>",
                               headers={"content-type": "text/html"})
 
     ctx = _ctx(manifest, handler, max_retries=3)
@@ -518,11 +518,11 @@ def test_taxonomy_upstream_500_retried_then_succeeds(manifest: Manifest) -> None
     op = manifest.get("sell_finances.getTransactionSummary")  # read, no policy
     calls = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         calls["n"] += 1
         if calls["n"] < 3:
-            return httpx.Response(500, json={"errors": [{"message": "boom"}]})
-        return httpx.Response(200, json={"transactionSummaries": []})
+            return httpx2.Response(500, json={"errors": [{"message": "boom"}]})
+        return httpx2.Response(200, json={"transactionSummaries": []})
 
     ctx = _ctx(manifest, handler, max_retries=3)
     out = _run_capturing(ctx, op, {}, None)
@@ -578,8 +578,8 @@ def test_error_json_includes_classification(manifest: Manifest) -> None:
 
     op = manifest.get("sell_leads.getAllClassifiedLeads")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, json={"errors": [{"message": "Access is denied"}]})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(403, json={"errors": [{"message": "Access is denied"}]})
 
     ctx = _ctx(manifest, handler)
     with pytest.raises(ApiError) as exc:
@@ -624,13 +624,13 @@ def test_f6_execute_cleanup_is_idempotent(manifest: Manifest, tmp_path: Path) ->
                        test_skus=["AAAAA"], offer_ids=["O1"], listing_ids=["L1"])
     save_ledger(ledger, base_dir=tmp_path)
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         # Everything is already gone: withdraw/delete return 404, Browse 404.
         if "/item/" in request.url.path:
-            return httpx.Response(404)
-        return httpx.Response(404)
+            return httpx2.Response(404)
+        return httpx2.Response(404)
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx2.Client(transport=httpx2.MockTransport(handler))
     from bidkit import EbayClient, EbayConfig
     mock = EbayClient(EbayConfig(access_token="t", marketplace_id="EBAY_DE"),
                       http_client=client)

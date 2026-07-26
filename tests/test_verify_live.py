@@ -26,7 +26,7 @@ import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
 
-import httpx
+import httpx2
 import pytest
 from click.testing import CliRunner
 
@@ -52,7 +52,7 @@ def _ctx(manifest: Manifest, handler, **ctx_kwargs) -> CliContext:
 
     client = EbayClient(
         EbayConfig(access_token="t", marketplace_id=ctx_kwargs.pop("marketplace_id", "EBAY_US")),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -140,10 +140,10 @@ def test_f1_verify_live_no_longer_false_negatives_on_enrichment(manifest: Manife
         "availability": {"shipToLocationAvailability": {"quantity": 1}},
     }
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
-            return httpx.Response(204)
-        return httpx.Response(200, json={
+            return httpx2.Response(204)
+        return httpx2.Response(200, json={
             "sku": "SKU",
             "product": {"title": "T"},
             "availability": {
@@ -195,14 +195,14 @@ def test_f2_describe_lists_all_success_statuses(runner: CliRunner) -> None:
 def test_f2_204_is_successful_terminal_with_null_body(manifest: Manifest) -> None:
     """A 204 response renders a successful terminal result whose body is null."""
     op = manifest.get("sell_inventory.updateOffer")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), allow_write=True, yes=True)
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True)
     out, _ = _run_capturing(ctx, op, {"offerId": "O1"}, {})
     assert out.strip() == "null"
 
 
 def test_f2_204_with_include_meta_has_status_and_null_data(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
-    ctx = _ctx(manifest, lambda r: httpx.Response(204), allow_write=True, yes=True,
+    ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True,
                include_meta=True)
     out, _ = _run_capturing(ctx, op, {"offerId": "O1"}, {})
     payload = json.loads(out)
@@ -256,8 +256,8 @@ def test_f3_aspect_names_surface_through_dispatch(manifest: Manifest) -> None:
     """A failing publishOffer surfaces the named aspects in the ApiError hint."""
     op = manifest.get("sell_inventory.publishOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, json={"errors": [{
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, json={"errors": [{
             "errorId": 25002,
             "parameters": [{"name": "0", "value": "Produktart"}],
         }]})
@@ -320,10 +320,10 @@ def test_f4_dry_run_config_headers_reflect_config() -> None:
 def test_f5_report_distinguishes_api_and_frontend_verification(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
-            return httpx.Response(200, json={"offerId": "O1"})
-        return httpx.Response(200, json={
+            return httpx2.Response(200, json={"offerId": "O1"})
+        return httpx2.Response(200, json={
             "offerId": "O1",
             "pricingSummary": {"price": {"value": "12.50", "currency": "USD"}},
         })
@@ -347,10 +347,10 @@ def test_f5_report_distinguishes_api_and_frontend_verification(manifest: Manifes
 def test_f5_report_unmatched_is_api_not_frontend(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
-            return httpx.Response(200, json={"offerId": "O1"})
-        return httpx.Response(200, json={
+            return httpx2.Response(200, json={"offerId": "O1"})
+        return httpx2.Response(200, json={
             "offerId": "O1",
             "pricingSummary": {"price": {"value": "10.00", "currency": "USD"}},
         })
@@ -367,7 +367,7 @@ def test_f5_report_unmatched_is_api_not_frontend(manifest: Manifest) -> None:
 
 def test_f5_verify_live_no_fields_reports_api_verified_false(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
-    ctx = _ctx(manifest, lambda r: httpx.Response(200, json={}),
+    ctx = _ctx(manifest, lambda r: httpx2.Response(200, json={}),
                allow_write=True, yes=True, verify_live=True, wait_for_live=0.0)
     _, err = _run_capturing(ctx, op, {"offerId": "O1"}, {})
     report = json.loads(err.strip())["verify_live"]

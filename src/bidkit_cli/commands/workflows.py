@@ -24,7 +24,7 @@ from datetime import UTC
 from typing import Any
 
 import click
-import httpx
+import httpx2
 
 from ..context import CliContext
 from ..errors import SafetyError
@@ -530,9 +530,9 @@ def _cleanup_run(
         except Exception:  # noqa: BLE001
             target[arg] = "not_checked"
             return
-        status = resp.status_code if isinstance(resp, httpx.Response) else None
+        status = resp.status_code if isinstance(resp, httpx2.Response) else None
         # 200/204 = deleted; 404 = already gone (idempotent success).
-        if isinstance(resp, httpx.Response):
+        if isinstance(resp, httpx2.Response):
             target[arg] = "deleted" if resp.status_code in {200, 204, 404} else "present"
         else:
             target[arg] = "deleted"
@@ -546,7 +546,7 @@ def _cleanup_run(
             _append_cleanup_event(
                 ledger, op, status, arg, sku=sku,
                 request_id=(resp.headers.get("x-ebay-c-request-id")
-                            if isinstance(resp, httpx.Response) else None),
+                            if isinstance(resp, httpx2.Response) else None),
             )
 
     if withdraw_op is not None:
@@ -620,13 +620,13 @@ def _sku_for_listing(ledger, listing_id: str) -> str | None:
 
 def _read_seller_state(call) -> str:
     """Classify a getInventoryItem/getOffer response as present/deleted."""
-    import httpx
+    import httpx2
 
     try:
         response = call()
     except Exception:
         return "not_checked"
-    if isinstance(response, httpx.Response):
+    if isinstance(response, httpx2.Response):
         if response.status_code == 200:
             return "present"
         if response.status_code == 404:

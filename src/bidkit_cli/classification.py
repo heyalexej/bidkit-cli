@@ -79,7 +79,7 @@ def classify_response(
     consulted only for the rate-limit ``Retry-After`` header and to enrich the
     hint, never to override the status-derived kind.
     """
-    # Case-insensitive header lookup: httpx lowercases header names, but this is
+    # Case-insensitive header lookup: httpx2 lowercases header names, but this is
     # a public entry point and a caller passing a plain dict with "Retry-After"
     # must not silently lose the backoff.
     headers = {k.lower(): v for k, v in (headers or {}).items()}

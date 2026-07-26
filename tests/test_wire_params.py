@@ -20,7 +20,7 @@ import json
 import shlex
 from contextlib import redirect_stdout
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 from click.testing import CliRunner
@@ -35,7 +35,7 @@ from bidkit_cli.redaction import is_sensitive_name
 def _ctx(manifest: Manifest, handler, *, allow_unknown_routes: bool = False) -> CliContext:
     client = EbayClient(
         EbayConfig(access_token="t"),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -62,11 +62,11 @@ def _dry_run(args: list[str]) -> dict:
 def test_f1_unknown_query_reaches_the_wire(manifest: Manifest) -> None:
     """An allowed unknown query param is forwarded via the generic transport path."""
     op = manifest.get("sell_fulfillment.getOrders")
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"orders": []})
+        return httpx2.Response(200, json={"orders": []})
 
     ctx = _ctx(manifest, handler)
     buf = io.StringIO()
@@ -103,11 +103,11 @@ def test_f1_unknown_query_appears_in_dry_run_preview(manifest: Manifest) -> None
 def test_f1_known_only_query_uses_fast_path(manifest: Manifest) -> None:
     """When no unknown params exist, dispatch still works normally."""
     op = manifest.get("sell_fulfillment.getOrders")
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"orders": []})
+        return httpx2.Response(200, json={"orders": []})
 
     ctx = _ctx(manifest, handler)
     buf = io.StringIO()
@@ -170,8 +170,8 @@ def test_f2_dry_run_redacts_sensitive_query(manifest: Manifest) -> None:
 def test_f2_raw_mode_redacts_sensitive_response_headers(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={"Authorization": "Bearer SECRET", "Set-Cookie": "session=abc"},
         )
@@ -194,8 +194,8 @@ def test_f2_raw_mode_redacts_sensitive_response_headers(manifest: Manifest) -> N
 def test_f2_include_meta_redacts_nothing_leaks(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={"Set-Cookie": "session=abc", "Authorization": "Bearer SECRET"},
         )
@@ -221,8 +221,8 @@ def test_f2_include_meta_redacts_nothing_leaks(manifest: Manifest) -> None:
 def test_f3_ebay_request_id_preferred(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={
                 "x-ebay-c-request-id": "EBAY-REQ",
@@ -245,8 +245,8 @@ def test_f3_traffic_id_falls_back_to_request_id(manifest: Manifest) -> None:
     """When no eBay request-id header exists, request_id falls back to the trace."""
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200, json={"sku": "A"},
             headers={"x-traffic-request-id": "TRAFFIC-ONLY"},
         )
@@ -265,8 +265,8 @@ def test_f3_traffic_id_falls_back_to_request_id(manifest: Manifest) -> None:
 def test_f3_no_trace_yields_nulls(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"sku": "A"})
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"sku": "A"})
 
     ctx = _ctx(manifest, handler)
     ctx.include_meta = True

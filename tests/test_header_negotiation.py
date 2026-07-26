@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import pytest
 from bidkit import EbayClient, EbayConfig
 
@@ -26,7 +26,7 @@ from bidkit_cli.safety import effective_risk, validate_overrides
 def _ctx(manifest: Manifest, handler, **config) -> CliContext:
     client = EbayClient(
         EbayConfig(access_token="t", **config),
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
     )
     ctx = CliContext()
     ctx._manifest = manifest
@@ -51,7 +51,7 @@ def test_f2_injects_accept_for_binary_feed_download(manifest: Manifest) -> None:
     op = manifest.get("sell_feed.getInputFile")
     assert op.success_response.kind == "bytes"
 
-    ctx = _ctx(manifest, lambda req: httpx.Response(200, content=b"\0PNG"))
+    ctx = _ctx(manifest, lambda req: httpx2.Response(200, content=b"\0PNG"))
     ctx.dry_run = True
     preview = json.loads(_run(
         ctx, op, path_params={"task_id": "T1"}, query_params={},
@@ -61,11 +61,11 @@ def test_f2_injects_accept_for_binary_feed_download(manifest: Manifest) -> None:
 
 
 def test_f2_accept_reaches_the_wire(manifest: Manifest, tmp_path: Path) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, content=b"\0PNG")
+        return httpx2.Response(200, content=b"\0PNG")
 
     ctx = _ctx(manifest, handler)
     ctx.output_file = str(tmp_path / "out.bin")
@@ -80,7 +80,7 @@ def test_f2_accept_reaches_the_wire(manifest: Manifest, tmp_path: Path) -> None:
 
 def test_f2_label_download_defaults_accept_application_pdf(manifest: Manifest) -> None:
     """downloadLabelFile declares its own Accept param; a default still applies."""
-    ctx = _ctx(manifest, lambda req: httpx.Response(200, content=b"%PDF"))
+    ctx = _ctx(manifest, lambda req: httpx2.Response(200, content=b"%PDF"))
     ctx.dry_run = True
     op = manifest.get("sell_logistics.downloadLabelFile")
     preview = json.loads(_run(
@@ -91,7 +91,7 @@ def test_f2_label_download_defaults_accept_application_pdf(manifest: Manifest) -
 
 
 def test_f2_user_supplied_accept_is_respected(manifest: Manifest) -> None:
-    ctx = _ctx(manifest, lambda req: httpx.Response(200, content=b"x"))
+    ctx = _ctx(manifest, lambda req: httpx2.Response(200, content=b"x"))
     ctx.dry_run = True
     op = manifest.get("sell_feed.getInputFile")
     preview = json.loads(_run(
@@ -104,11 +104,11 @@ def test_f2_user_supplied_accept_is_respected(manifest: Manifest) -> None:
 # --- F7: unknown headers are not silently dropped --------------------------
 
 def test_f7_unknown_header_reaches_wire_when_allowed(manifest: Manifest) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return httpx.Response(200, json={"ok": True})
+        return httpx2.Response(200, json={"ok": True})
 
     ctx = _ctx(manifest, handler)
     op = manifest.get("sell_inventory.getInventoryItem")
@@ -127,9 +127,9 @@ def test_f4_dry_run_rejects_invalid_model_body(manifest: Manifest) -> None:
     """A malformed body is rejected during dry-run, before any network/token."""
     network_called = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         network_called.append(request)
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
     ctx = _ctx(manifest, handler)
     ctx.dry_run = True
@@ -143,7 +143,7 @@ def test_f4_dry_run_rejects_invalid_model_body(manifest: Manifest) -> None:
 
 
 def test_f4_dry_run_rejects_missing_required_binary(manifest: Manifest) -> None:
-    ctx = _ctx(manifest, lambda req: httpx.Response(200))
+    ctx = _ctx(manifest, lambda req: httpx2.Response(200))
     ctx.dry_run = True
     op = manifest.get("commerce_media.uploadVideo")
     with pytest.raises(UsageError):
@@ -151,7 +151,7 @@ def test_f4_dry_run_rejects_missing_required_binary(manifest: Manifest) -> None:
 
 
 def test_f4_dry_run_rejects_missing_required_multipart_file(manifest: Manifest) -> None:
-    ctx = _ctx(manifest, lambda req: httpx.Response(200))
+    ctx = _ctx(manifest, lambda req: httpx2.Response(200))
     ctx.dry_run = True
     op = manifest.get("commerce_media.createImageFromFile")
     with pytest.raises(UsageError):
@@ -206,14 +206,20 @@ def test_f5_current_install_is_compatible(manifest: Manifest) -> None:
 
 
 def test_f5_mismatched_generation_is_rejected(monkeypatch, manifest: Manifest) -> None:
-    monkeypatch.setattr(manifest_mod, "_installed_sdk_version", lambda: "0.2.0")
+    major, minor = manifest_mod._major_minor(manifest.data.sdk_version)
+    monkeypatch.setattr(
+        manifest_mod, "_installed_sdk_version", lambda: f"{major}.{minor + 1}.0"
+    )
     with pytest.raises(ConfigError):
         manifest_mod.assert_sdk_compatible(manifest)
 
 
 def test_f5_patch_release_is_accepted(monkeypatch, manifest: Manifest) -> None:
-    monkeypatch.setattr(manifest_mod, "_installed_sdk_version", lambda: "0.1.9")
-    manifest_mod.assert_sdk_compatible(manifest)  # same 0.1.x series
+    major, minor = manifest_mod._major_minor(manifest.data.sdk_version)
+    monkeypatch.setattr(
+        manifest_mod, "_installed_sdk_version", lambda: f"{major}.{minor}.9"
+    )
+    manifest_mod.assert_sdk_compatible(manifest)  # same major.minor series
 
 
 # --- F6: credential file permissions ---------------------------------------

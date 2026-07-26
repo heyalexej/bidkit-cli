@@ -25,7 +25,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
+import httpx2
 
 from .context import CliContext
 from .errors import UsageError
@@ -124,7 +124,7 @@ def merge_body(
     path_args = [path_params[p.wire_name] for p in read_op.path_params]
     method = getattr(resource, read_op.python_method)
     current = method(*path_args, raw_response=True)
-    if isinstance(current, httpx.Response):
+    if isinstance(current, httpx2.Response):
         if current.status_code == 404:
             return body  # nothing to merge over (the "create" case)
         if current.status_code >= 400:
@@ -290,7 +290,7 @@ _FRONTEND_NOTE = (
 
 
 def _readback_value(readback: Any) -> Any:
-    if isinstance(readback, httpx.Response):
+    if isinstance(readback, httpx2.Response):
         content_type = readback.headers.get("content-type", "")
         if "json" in content_type and readback.content:
             import orjson
@@ -552,7 +552,7 @@ def verify_public(
     while True:
         attempts += 1
         response = browse_method(browse_item_id, raw_response=True)
-        last_status = response.status_code if isinstance(response, httpx.Response) else None
+        last_status = response.status_code if isinstance(response, httpx2.Response) else None
         browse_state, browse_observed = _classify_browse(response)
         # Determine the seller-side state lazily (it changes slowly, so one read
         # per attempt is enough and keeps the report truthful each poll).
@@ -673,7 +673,7 @@ def _classify_browse(response: Any) -> tuple[str, dict[str, Any] | None]:
     purchasable). That distinction is what lets the combined state name
     ``not_listed`` (seller deleted + public ended) instead of a confusing 200.
     """
-    if not isinstance(response, httpx.Response):
+    if not isinstance(response, httpx2.Response):
         # Already-parsed model/dict: treat as active unless it carries an end signal.
         body = response if isinstance(response, dict) else None
         return ("ended" if _is_ended(body) else "active"), body
@@ -728,7 +728,7 @@ def _seller_state(inv_method: Any, sku: str | None) -> str:
         response = inv_method(sku, raw_response=True)
     except Exception:  # noqa: BLE001 - a seller read failure must not fake a state
         return "not_checked"
-    if isinstance(response, httpx.Response):
+    if isinstance(response, httpx2.Response):
         if response.status_code == 200:
             return "present"
         if response.status_code == 404:
