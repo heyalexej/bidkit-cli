@@ -152,6 +152,11 @@ def build_plan(
     steps: list[RevertStep] = []
     blocked: list[RevertStep] = []
     for record in ordered:
+        # Reads changed nothing, so they belong in neither list: reporting every
+        # GET as "blocked / no reverse mapping" buries the handful of writes a
+        # reader actually has to make a decision about.
+        if record.get("classification") == "read":
+            continue
         # An op without a seq cannot be correlated back to a compensates link;
         # use a sentinel so it is still reported rather than silently dropped.
         source_seq = record.get("seq")

@@ -280,6 +280,14 @@ REVERSE_OPS: dict[str, ReverseSpec] = {
 # every generated ``sell_finances`` / ``sell_feedback`` op by hand.
 IRREVERSIBLE: dict[str, str] = {
     "sell_inventory.bulkPublishOffer": "bulk publish must be withdrawn per offer",
+    # Not a gap in the mapping: uploaded EPS images have no delete endpoint and
+    # expire on their own, so "nothing to do" is the correct, complete answer.
+    "commerce_media.createImageFromFile": (
+        "uploaded EPS images expire on their own (~30 days); no cleanup exists or is needed"
+    ),
+    "commerce_media.createImageFromUrl": (
+        "uploaded EPS images expire on their own (~30 days); no cleanup exists or is needed"
+    ),
 }
 
 _FINANCES_REASON = "a booked fee cannot be reversed by deleting records"
