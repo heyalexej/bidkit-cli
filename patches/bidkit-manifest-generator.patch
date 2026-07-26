@@ -1,0 +1,591 @@
+diff --git a/scripts/generate_openapi.py b/scripts/generate_openapi.py
+index 743355d..0c1dba1 100644
+--- a/scripts/generate_openapi.py
++++ b/scripts/generate_openapi.py
+@@ -143,6 +143,10 @@ class Service:
+     title: str
+     version: str
+     spec: dict[str, Any]
++    # CLI manifest metadata (mirrors what resource_class renders into the `service` dict):
++    auth_scheme: str = "Bearer"
++    requires_signature: bool = False
++    source_spec: str = ""
+ 
+ 
+ def main() -> None:
+@@ -152,6 +156,14 @@ def main() -> None:
+     # Generator intermediate only; kept outside the package tree so it can never
+     # end up in a built wheel or sdist.
+     parser.add_argument("--normalized-dir", type=Path, default=Path("specs/normalized"))
++    # When set, the generator also emits the compact CLI manifest consumed by bidkit-cli.
++    # Omit it to run the SDK-only generation path (the historical default).
++    parser.add_argument(
++        "--manifest-dir",
++        type=Path,
++        default=None,
++        help="Directory to write the CLI operation manifest (manifest.json)",
++    )
+     args = parser.parse_args()
+ 
+     spec_dir = args.spec_dir.resolve()
+@@ -187,6 +199,15 @@ def main() -> None:
+     write_resources(generated_dir / "resources.py", services)
+     print(f"Generated resources for {len(services)} services", flush=True)
+ 
++    # Operation-identity validation runs on the same enumeration the renderer used.
++    # It must never silently skip a collision (see the old ``seen_names`` guard).
++    validate_operation_identity(services)
++
++    if args.manifest_dir is not None:
++        manifest_path = args.manifest_dir.resolve() / "manifest.json"
++        write_manifest(manifest_path, services)
++        print(f"Generated CLI manifest -> {manifest_path}", flush=True)
++
+ 
+ def load_service(path: Path) -> Service:
+     spec = orjson.loads(path.read_bytes())
+@@ -215,6 +236,9 @@ def load_service(path: Path) -> Service:
+         title=spec.get("info", {}).get("title", key),
+         version=spec.get("info", {}).get("version", ""),
+         spec=spec,
++        auth_scheme="TOKEN" if key in POST_ORDER_SERVICES else "Bearer",
++        requires_signature=key in SIGNED_SERVICES,
++        source_spec=path.name,
+     )
+ 
+ 
+@@ -830,6 +854,464 @@ def write_resources(path: Path, services: list[Service]) -> None:
+     path.write_text("\n".join(lines).rstrip() + "\n")
+ 
+ 
++# ---------------------------------------------------------------------------
++# CLI operation manifest
++#
++# The manifest is the single source of truth the CLI, shell completion, agent
++# skill references, and help pages are generated from. It reuses the *same*
++# pure helpers the resource renderer uses (body_parameter, response_model_expr,
++# dedupe_parameters, safe_identifier, ...) so command behavior can never drift
++# from SDK behavior. It stores compact metadata + importable model references —
++# never the full OAS corpus, and never serialized schemas (those come from the
++# Pydantic models' model_json_schema() at runtime).
++# ---------------------------------------------------------------------------
++
++MANIFEST_SCHEMA_VERSION = 1
++
++# Headers the transport supplies from EbayConfig; exposing them as command
++# options would duplicate --marketplace / config and invite mistakes. ``Accept``
++# is intentionally NOT inherited: a few operations (e.g. binary downloads)
++# declare a required, operation-specific Accept header the caller must set.
++INHERITED_HEADERS = frozenset({
++    "authorization",
++    "content-type",
++    "content-language",
++    "x-ebay-c-marketplace-id",
++})
++
++# Bounded enums are surfaced for completion/help; longer ones stay unbounded.
++_MAX_ENUM_FOR_MANIFEST = 80
++
++
++@dataclass(frozen=True)
++class Operation:
++    """Canonical descriptor for one OAS operation.
++
++    Resource rendering and manifest rendering both ultimately describe the same
++    operation; this captures the shared resolution so the two views cannot drift.
++    """
++
++    service: Service
++    operation_id: str
++    method_name: str
++    cli_name: str
++    method: str
++    path: str
++    operation: dict[str, Any]
++    parameters: tuple[dict[str, Any], ...]
++    request_body: dict[str, Any] | None
++    response_model_expr: str
++    sign: bool
++
++
++def resolve_operation(service: Service, operation_info: dict[str, Any]) -> Operation:
++    operation = operation_info["operation"]
++    operation_id = operation.get("operationId") or fallback_operation_id(operation_info)
++    method_name = safe_identifier(snake_case(operation_id))
++    parameters = dedupe_parameters(operation_info["parameters"])
++    parameters = with_optional_marketplace_header(parameters)
++    parameters = [
++        param
++        for param in parameters
++        if not (
++            param.get("in") == "header"
++            and param.get("name", "").lower() in ("content-type", "content-language")
++        )
++    ]
++    return Operation(
++        service=service,
++        operation_id=operation_id,
++        method_name=method_name,
++        cli_name=method_name.rstrip("_").replace("_", "-"),
++        method=operation_info["method"],
++        path=operation_info["path"],
++        operation=operation,
++        parameters=tuple(parameters),
++        request_body=body_parameter(service, operation),
++        response_model_expr=response_model_expr(service, operation, operation_info["method"]),
++        sign=(service.key, operation_id) in SIGNED_OPERATIONS,
++    )
++
++
++def iter_resolved_operations(service: Service) -> Iterable[Operation]:
++    for operation_info in iter_operations(service.spec):
++        yield resolve_operation(service, operation_info)
++
++
++def load_all_services(
++    spec_dir: Path = Path("specs/ebay"),
++    normalized_dir: Path = Path("specs/normalized"),
++) -> list[Service]:
++    """Preprocess specs and return :class:`Service` objects without codegen.
++
++    Used by tests and the manifest emitter's callers; cheap because it never
++    invokes datamodel-code-generator (only patches + loads the normalized JSON).
++    """
++    spec_dir = spec_dir.resolve()
++    normalized_dir = normalized_dir.resolve()
++    normalized_dir.mkdir(parents=True, exist_ok=True)
++    services: list[Service] = []
++    for path in sorted(spec_dir.glob("*.json")):
++        spec = preprocess_spec(path.stem, orjson.loads(path.read_bytes()))
++        normalized_path = normalized_dir / path.name
++        normalized_path.write_bytes(orjson.dumps(spec, option=orjson.OPT_INDENT_2))
++        services.append(load_service(normalized_path))
++    return services
++
++
++def validate_operation_identity(services: list[Service]) -> None:
++    """Fail generation on any normalized-name collision (replaces silent skips).
++
++    The historical renderer silently skipped a method whose normalized name
++    collided with an earlier one in the same service. That hid real spec drift;
++    generation now fails with a diagnostic naming every party to the collision.
++    """
++    failures: list[str] = []
++    for service in services:
++        by_python: dict[str, list[Operation]] = defaultdict(list)
++        by_cli: dict[str, list[Operation]] = defaultdict(list)
++        for operation in iter_resolved_operations(service):
++            by_python[operation.method_name].append(operation)
++            by_cli[operation.cli_name].append(operation)
++        for name, group in by_python.items():
++            if len(group) > 1:
++                failures.append(_collision_diagnostic(service, "python method", name, group))
++        for name, group in by_cli.items():
++            if len(group) > 1:
++                failures.append(_collision_diagnostic(service, "cli command", name, group))
++    if failures:
++        raise SystemExit(
++            "Operation-identity collisions detected; resolve in the spec patches "
++            "before shipping:\n\n" + "\n\n".join(failures)
++        )
++
++
++def _collision_diagnostic(
++    service: Service, kind: str, name: str, group: list[Operation]
++) -> str:
++    lines = [
++        f"service={service.key}  normalized {kind}={name!r}  count={len(group)}",
++    ]
++    for operation in sorted(group, key=lambda item: item.path):
++        lines.append(
++            f"  - operationId={operation.operation_id!r} "
++            f"{operation.method} {operation.path}"
++        )
++    return "\n".join(lines)
++
++
++def write_manifest(path: Path, services: list[Service]) -> None:
++    """Emit the deterministic, compact CLI operation manifest.
++
++    No timestamp (deterministic builds), no full OAS, no serialized schemas —
++    only the metadata needed to invoke/help/complete, plus importable model refs.
++    """
++    path.parent.mkdir(parents=True, exist_ok=True)
++    services = sorted(services, key=lambda item: item.key)
++    service_records = [manifest_service(service) for service in services]
++    operation_records = [
++        manifest_operation(operation)
++        for service in services
++        for operation in sorted(iter_resolved_operations(service), key=lambda item: item.operation_id)
++    ]
++    namespaces = sorted({service.group for service in services})
++    manifest = {
++        "schema_version": MANIFEST_SCHEMA_VERSION,
++        "sdk_package": "bidkit",
++        "generator_version": "2026-01",
++        "operation_count": len(operation_records),
++        "service_count": len(service_records),
++        "namespace_count": len(namespaces),
++        "namespaces": namespaces,
++        "services": service_records,
++        "operations": operation_records,
++    }
++    path.write_bytes(orjson.dumps(manifest, option=orjson.OPT_INDENT_2))
++
++
++def manifest_service(service: Service) -> dict[str, Any]:
++    operations = sorted(
++        (operation.operation_id for operation in iter_resolved_operations(service)),
++    )
++    return {
++        "key": service.key,
++        "namespace": service.group,
++        "cli_name": service.attr.rstrip("_").replace("_", "-"),
++        "python_accessor": service.attr,
++        "resource_class": service.class_name,
++        "async_resource_class": service.async_class_name,
++        "title": service.title,
++        "version": service.version,
++        "base_path": service.base_path,
++        "subdomain": service.subdomain,
++        "auth_scheme": service.auth_scheme,
++        "requires_signature": service.requires_signature,
++        "source_spec": service.source_spec,
++        "operations": operations,
++    }
++
++
++def manifest_operation(operation: Operation) -> dict[str, Any]:
++    service = operation.service
++    cli_path = [
++        "post-order" if service.group == "post_order" else service.group,
++        service.attr.rstrip("_").replace("_", "-"),
++        operation.cli_name,
++    ]
++    summary = clean_doc(
++        operation.operation.get("summary") or operation.operation.get("description") or ""
++    )
++    return {
++        "key": f"{service.key}.{operation.operation_id}",
++        "service_key": service.key,
++        "namespace": service.group,
++        "service_cli_name": service.attr.rstrip("_").replace("_", "-"),
++        "operation_id": operation.operation_id,
++        "python_method": operation.method_name,
++        "aliases": sorted({operation.operation_id, operation.method_name}),
++        "cli_path": cli_path,
++        "http_method": operation.method,
++        "path": operation.path,
++        "summary": summary,
++        "tags": list(operation.operation.get("tags") or []),
++        "auth": manifest_auth(operation),
++        "signing": {
++            "required": operation.sign or service.requires_signature,
++            "reason": (
++                "eBay requires an RFC 9421 digital signature for this operation"
++                if operation.sign or service.requires_signature
++                else None
++            ),
++        },
++        "risk": base_risk(operation.method),
++        "request": manifest_request(operation.operation, operation.service),
++        "parameters": [
++            manifest_parameter(param, service)
++            for param in operation.parameters
++            if param.get("in") in {"path", "query", "header"}
++            and not (
++                param.get("in") == "header"
++                and param.get("name", "").lower() in INHERITED_HEADERS
++            )
++        ],
++        "responses": manifest_responses(operation.operation, service),
++        "stream_method": (
++            f"stream_{operation.method_name}"
++            if operation.response_model_expr == "bytes"
++            else None
++        ),
++    }
++
++
++def base_risk(method: str) -> str:
++    """Risk classification derived purely from the HTTP method.
++
++    POST is ``unknown`` by default: eBay POSTs are sometimes searches (safe) and
++    sometimes mutations, so the CLI fails closed until a curated override (in the
++    CLI source, not generated data) classifies the safe ones as reads.
++    """
++    upper = method.upper()
++    if upper in {"GET", "HEAD", "OPTIONS"}:
++        return "read"
++    if upper == "DELETE":
++        return "destructive"
++    if upper in {"PUT", "PATCH"}:
++        return "write"
++    return "unknown"
++
++
++def manifest_auth(operation: Operation) -> dict[str, Any]:
++    service = operation.service
++    security = operation.operation.get("security") or service.spec.get("security") or []
++    schemes: list[str] = []
++    scopes: list[str] = []
++    for requirement in security:
++        if not isinstance(requirement, dict) or not requirement:
++            continue
++        scheme_name, scheme_scopes = next(iter(requirement.items()))
++        schemes.append(scheme_name)
++        if isinstance(scheme_scopes, list):
++            scopes.extend(scheme_scopes)
++    return {
++        "scheme": service.auth_scheme,
++        "security_schemes": sorted(set(schemes)),
++        "scopes": sorted(set(scopes)),
++    }
++
++
++def manifest_parameter(param: dict[str, Any], service: Service) -> dict[str, Any]:
++    schema = resolve_schema_ref(param.get("schema", {}), service)
++    wire_name = param.get("name", "")
++    is_array = schema.get("type") == "array"
++    if is_array:
++        item_schema = resolve_schema_ref(schema.get("items", {}), service)
++        value_type = item_schema.get("type")
++        value_format = item_schema.get("format")
++        enum = item_schema.get("enum")
++    else:
++        value_type = schema.get("type")
++        value_format = schema.get("format")
++        enum = schema.get("enum")
++    if isinstance(enum, list) and len(enum) > _MAX_ENUM_FOR_MANIFEST:
++        enum = None
++    default = schema.get("default", param.get("default"))
++    return {
++        "wire_name": wire_name,
++        "cli_name": kebab_name(wire_name),
++        "python_name": safe_identifier(snake_case(wire_name)),
++        "location": param.get("in"),
++        "required": bool(param.get("required")),
++        "type": value_type,
++        "format": value_format,
++        "enum": enum,
++        "is_array": is_array,
++        "description": param.get("description") or None,
++        "default": default,
++        "allow_repeated": is_array,
++    }
++
++
++def manifest_request(
++    operation: dict[str, Any] | None, service: Service
++) -> dict[str, Any]:
++    request_body = operation.get("requestBody") if operation else None
++    if not request_body:
++        return {"kind": "none", "required": False, "content_type": None, "model": None}
++    content = request_body.get("content", {})
++    content_type = preferred_content_type(content)
++    media = content.get(content_type, {}) if content_type else {}
++    schema = media.get("schema", {}) if isinstance(media, dict) else {}
++    required = bool(request_body.get("required"))
++    if content_type == "multipart/form-data":
++        return {
++            "kind": "multipart",
++            "required": required,
++            "content_type": content_type,
++            "model": None,
++            "fields": multipart_fields(schema, service),
++        }
++    if content_type == "application/octet-stream":
++        return {
++            "kind": "binary",
++            "required": required,
++            "content_type": content_type,
++            "model": None,
++        }
++    # json: resolve the referenced request model (if any) to an importable path.
++    model_ref = model_reference(schema, service)
++    return {
++        "kind": "json",
++        "required": required,
++        "content_type": content_type or "application/json",
++        "model": model_ref["model"],
++        "model_name": model_ref["model_name"],
++        "accepts_mapping": True,
++    }
++
++
++def manifest_responses(operation: dict[str, Any], service: Service) -> list[dict[str, Any]]:
++    responses = operation.get("responses", {})
++    records: list[dict[str, Any]] = []
++    for status in sorted(responses, key=_status_sort_key):
++        response = responses[status]
++        if not isinstance(response, dict):
++            continue
++        content = response.get("content", {})
++        content_type, kind, model_ref = classify_response_content(content, service)
++        records.append({
++            "status": status,
++            "content_type": content_type,
++            "kind": kind,
++            "model": model_ref["model"],
++            "description": response.get("description") or None,
++        })
++    return records
++
++
++def _status_sort_key(status: str) -> tuple[int, str]:
++    return (0, status) if status.isdigit() else (1, status)
++
++
++def classify_response_content(
++    content: dict[str, Any], service: Service
++) -> tuple[str | None, str, dict[str, Any]]:
++    """Pick the preferred response media type and classify it.
++
++    Returns (content_type, kind, model_ref). kind is one of json/bytes/text/none.
++    """
++    if not content:
++        return None, "none", {"model": None, "model_name": None}
++    content_type = preferred_content_type(content)
++    if content_type is None:
++        content_type, media = next(iter(content.items()))
++    else:
++        media = content[content_type]
++    normalized = normalize_content_type(content_type)
++    if normalized in BINARY_RESPONSE_CONTENT_TYPES:
++        return content_type, "bytes", {"model": None, "model_name": None}
++    if normalized in TEXT_RESPONSE_CONTENT_TYPES:
++        return content_type, "text", {"model": None, "model_name": None}
++    schema = media.get("schema", {}) if isinstance(media, dict) else {}
++    return content_type, "json", model_reference(schema, service)
++
++
++def normalize_content_type(content_type: str) -> str:
++    return content_type.split(";", 1)[0].strip().lower()
++
++
++def multipart_fields(
++    schema: dict[str, Any], service: Service
++) -> list[dict[str, Any]]:
++    """Describe each multipart field from the normalized request-body schema.
++
++    The generator patches missing multipart bodies (MISSING_MULTIPART_REQUEST_BODIES)
++    directly into the operation, so they are already present in the normalized spec.
++    """
++    schema = resolve_schema_ref(schema, service)
++    properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
++    required = set(schema.get("required", []) if isinstance(schema, dict) else [])
++    fields = []
++    for name, definition in properties.items():
++        definition = resolve_schema_ref(definition, service)
++        is_binary = definition.get("format") == "binary" or definition.get("type") == "file"
++        fields.append({
++            "name": name,
++            "kind": "file" if is_binary else "text",
++            "required": name in required,
++        })
++    return fields
++
++
++def model_reference(schema: dict[str, Any], service: Service) -> dict[str, Any]:
++    """Resolve a schema to an importable ``bidkit.generated.models.<mod>.<Name>`` ref.
++
++    Returns {model, model_name}; both None when the schema is not a $ref to a
++    named component (arrays/scalars/untyped bodies have no single model class).
++    """
++    ref = ref_name(schema)
++    if not ref:
++        return {"model": None, "model_name": None}
++    model_name = pascal_case(ref)
++    return {
++        "model": f"bidkit.generated.models.{service.module_name}.{model_name}",
++        "model_name": model_name,
++    }
++
++
++def resolve_schema_ref(schema: dict[str, Any], service: Service) -> dict[str, Any]:
++    """Follow a single $ref into the service's component schemas (enums, ...)."""
++    ref = ref_name(schema)
++    if not ref:
++        return schema if isinstance(schema, dict) else {}
++    resolved = service.spec.get("components", {}).get("schemas", {}).get(ref)
++    return resolved if isinstance(resolved, dict) else {}
++
++
++def kebab_name(name: str) -> str:
++    """HTTP/OpenAPI name -> kebab-case CLI option/argument display name."""
++    return safe_identifier(snake_case(name)).rstrip("_").replace("_", "-")
++
++
+ def resource_class(service: Service, *, async_resource: bool) -> list[str]:
+     cls = service.async_class_name if async_resource else service.class_name
+     base = "AsyncBaseResource" if async_resource else "BaseResource"
+diff --git a/tests/test_generator.py b/tests/test_generator.py
+index 6a38d6c..b786cf5 100644
+--- a/tests/test_generator.py
++++ b/tests/test_generator.py
+@@ -1,4 +1,12 @@
+ from generate_openapi import clean_description, trim_description
++from generate_openapi import (
++    base_risk,
++    iter_resolved_operations,
++    load_all_services,
++    manifest_operation,
++    manifest_service,
++    validate_operation_identity,
++)
+ 
+ 
+ def test_clean_description_strips_tags_and_entities() -> None:
+@@ -29,3 +37,52 @@ def test_trim_description_cuts_at_sentence_boundary() -> None:
+     trimmed = trim_description(text, limit=100)
+     assert trimmed.endswith(".")
+     assert len(trimmed) <= 100
++
++
++# --- generator manifest + operation-identity (spec §6, §18.1) -------------
++
++EXPECTED_SPEC_COUNT = 41
++EXPECTED_OPERATION_COUNT = 455
++
++
++def test_enumerated_counts_match_snapshot() -> None:
++    services = load_all_services()
++    assert len(services) == EXPECTED_SPEC_COUNT
++    total = sum(len(list(iter_resolved_operations(s))) for s in services)
++    assert total == EXPECTED_OPERATION_COUNT
++
++
++def test_operation_identity_has_no_collisions() -> None:
++    # All 455 operations must enumerate to unique python + CLI names; this is the
++    # guard that replaced the renderer's old silent-skip behavior (spec §6.2).
++    services = load_all_services()
++    validate_operation_identity(services)  # raises on any collision
++
++
++def test_base_risk_classification() -> None:
++    assert base_risk("GET") == "read"
++    assert base_risk("HEAD") == "read"
++    assert base_risk("PUT") == "write"
++    assert base_risk("PATCH") == "write"
++    assert base_risk("DELETE") == "destructive"
++    assert base_risk("POST") == "unknown"
++
++
++def test_manifest_records_cover_every_operation() -> None:
++    services = load_all_services()
++    validate_operation_identity(services)
++    seen_keys: set[str] = set()
++    seen_cli_paths: set[tuple[str, ...]] = set()
++    for service in services:
++        svc_record = manifest_service(service)
++        assert len(svc_record["operations"]) == len(
++            list(iter_resolved_operations(service))
++        )
++        for operation in iter_resolved_operations(service):
++            record = manifest_operation(operation)
++            assert record["key"] not in seen_keys
++            seen_keys.add(record["key"])
++            path = tuple(record["cli_path"])
++            assert path not in seen_cli_paths
++            seen_cli_paths.add(path)
++    assert len(seen_keys) == EXPECTED_OPERATION_COUNT
