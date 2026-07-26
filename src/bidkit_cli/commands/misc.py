@@ -82,6 +82,6 @@ def skill_command(ctx: click.Context) -> None:
     else:
         click.echo(
             "skill is not packaged in this install; see the repository at "
-            "packages/bidkit-cli/skills/bidkit-cli/SKILL.md"
+            "skills/bidkit-cli/SKILL.md"
         )
     _ = context  # context available for future JSON output of the path

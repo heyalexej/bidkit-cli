@@ -413,11 +413,12 @@ def assert_sdk_compatible(manifest: Manifest) -> None:
     if installed is None:
         return  # bidkit not importable for a version read; let dispatch fail clearly
     if _major_minor(installed) != _major_minor(declared):
+        major, minor = _major_minor(declared)
         raise ConfigError(
             f"bidkit {installed} is installed but the CLI manifest was generated "
-            f"against bidkit {_major_minor(declared)}.x; the generated command "
+            f"against bidkit {major}.{minor}.x; the generated command "
             "surface can differ. Reinstall a compatible bidkit or regenerate the "
-            "manifest against this bidkit (see packages/bidkit-cli/scripts/).",
+            "manifest against this bidkit (see scripts/regenerate_manifest.py).",
         )
 
 
