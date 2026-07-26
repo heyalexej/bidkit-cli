@@ -1,12 +1,16 @@
-"""``bidkit session`` — inspect and manage the session log (CONTRACT v1).
+"""``bidkit session`` — inspect and manage the session log.
 
 The session log is an append-only JSONL trail of every CLI invocation and the
-operations it dispatched. This group is read-only by default (``list``/``show``/
-``grep``/``doctor``) plus two maintenance commands:
+operations it dispatched. It is a durable record of what this account did — not
+a rotating ops log — so **nothing in it ever expires on its own**. This group is
+read-only by default (``list``/``show``/``grep``/``doctor``) plus two
+maintenance commands:
 
-* ``gc`` removes session files older than a threshold, then sweeps body blobs
-  that no remaining session references (blobs are *shared* across sessions, so a
-  reference scan — not a per-file delete — is the only correct sweep).
+* ``prune`` reclaims space, and only when asked: there is no retention policy
+  and no default selection. Its default scope drops spilled payload bodies
+  while every record line survives; deleting history itself takes ``--records``
+  plus an explicit range and ``--yes``. Blobs are *shared* across sessions, so
+  a reference scan — not a per-file delete — is the only correct sweep.
 * ``revert`` builds a compensating plan, and — with the safety gates — executes
   it. Blocked/irreversible steps are always printed, never silently skipped.
 
@@ -55,7 +59,7 @@ def session_group(ctx: click.Context) -> None:
 
     Reading the log does not extend it: inspecting sessions would otherwise
     create a session per look, so ``list`` would report a different count every
-    time it ran and ``gc``/``doctor`` would inflate the very thing they audit.
+    time it ran and ``prune``/``doctor`` would inflate the very thing they audit.
     ``revert`` turns logging back on for itself — it performs real writes, and
     those must be recorded like any other mutation.
     """
@@ -205,50 +209,166 @@ def session_doctor(context: CliContext) -> None:
 
 
 # ---------------------------------------------------------------------------
-# gc
+# prune
 # ---------------------------------------------------------------------------
 
-@session_group.command("gc")
-@click.option("--keep-days", type=int, required=True,
-              help="Delete session files whose start time is older than N days.")
-@click.pass_obj
-def session_gc(context: CliContext, keep_days: int) -> None:
-    """Delete old session files, then sweep orphaned body blobs.
+# Sessions kept regardless of any selection, so a mistyped range cannot take the
+# recent trail with it.
+_DEFAULT_KEEP_LAST = 20
 
-    Preview vs. delete follows the GLOBAL ``--dry-run`` (``ctx.obj.dry_run``);
-    it is not redeclared locally because that collides with the root-group
-    option the argv reorderer already owns. The blob sweep scans references in
-    the REMAINING session files (not the deleted ones): a body blob is shared
-    across sessions and must survive as long as any one references it.
+
+@session_group.command("prune")
+@click.option("--orphans", is_flag=True, default=False,
+              help="Remove body blobs no remaining session references (loses no history).")
+@click.option("--empty", "empty_only", is_flag=True, default=False,
+              help="Select sessions that recorded no operations.")
+@click.option("--older-than", "older_than", default=None,
+              help="Select sessions older than a duration, e.g. 90d, 18m, 2y.")
+@click.option("--before", "before", default=None,
+              help="Select sessions started before an absolute date (YYYY-MM-DD).")
+@click.option("--session", "session_ids", multiple=True,
+              help="Select a specific session id (repeatable).")
+@click.option("--records", "with_records", is_flag=True, default=False,
+              help="Also delete the session files themselves. Destroys history; "
+                   "requires an explicit range and --yes.")
+@click.option("--keep-last", type=int, default=_DEFAULT_KEEP_LAST, show_default=True,
+              help="Never remove this many most-recent sessions, whatever is selected.")
+@click.pass_obj
+def session_prune(
+    context: CliContext,
+    orphans: bool,
+    empty_only: bool,
+    older_than: str | None,
+    before: str | None,
+    session_ids: tuple[str, ...],
+    with_records: bool,
+    keep_last: int,
+) -> None:
+    """Reclaim space in the session store. Nothing expires on its own.
+
+    The log is a durable record of what this account did, not a rotating ops
+    log, so there is no retention policy and no default selection: run bare and
+    this command selects nothing and removes nothing. Pruning is always an
+    explicit, deliberate act.
+
+    Scope defaults to bodies only — spilled request/response payloads are
+    dropped while every record line survives, so a pruned session still reports
+    its operations, ids, status, retry history and each body's sha256. Only
+    ``--records`` deletes history itself, and it additionally demands a range
+    and ``--yes``.
+
+    Without ``--yes`` this previews: it prints exactly what would go, with the
+    bytes reclaimed, and deletes nothing. (``auth cache clear`` refuses instead
+    of previewing; here the question "how much could I reclaim" is the common
+    one, so previewing is the useful default.) ``--yes``/``--dry-run`` are
+    global options hoisted by the argv reorderer and are read from the context
+    rather than declared locally.
     """
-    if keep_days < 0:
-        raise UsageError("--keep-days must be >= 0")
-    dry_run = bool(context.dry_run)
     base = _base_dir(context)
-    cutoff = datetime.now(UTC) - timedelta(days=keep_days)
+    selectors = [orphans, empty_only, bool(older_than), bool(before), bool(session_ids)]
+    if not any(selectors):
+        raise UsageError(
+            "prune removes nothing without an explicit selection",
+            hint="try --orphans (safe), --empty, --older-than 2y, --before DATE, "
+                 "or --session <id>",
+        )
+    if older_than and before:
+        raise UsageError("--older-than and --before are alternatives; pass one")
+    if keep_last < 0:
+        raise UsageError("--keep-last must be >= 0")
+
+    cutoff: datetime | None = None
+    if older_than:
+        cutoff = datetime.now(UTC) - _parse_duration(older_than)
+    elif before:
+        cutoff = _parse_date(before)
+
+    if with_records and cutoff is None and not session_ids and not empty_only:
+        raise UsageError(
+            "--records deletes history and needs an explicit range",
+            hint="add --older-than/--before, --session <id>, or --empty",
+        )
+
+    all_files = _iter_session_files(base)
+    # Newest-first, so the keep-last floor protects the recent trail.
+    ordered = sorted(all_files, key=lambda p: p.name, reverse=True)
+    protected = set(ordered[:keep_last]) if keep_last else set()
+
+    selected: list[Path] = []
+    for path in ordered:
+        if path in protected:
+            continue
+        if session_ids and _session_id_of(path) not in set(session_ids):
+            continue
+        if cutoff is not None:
+            started = _started_dt_from_path(path)
+            if started is None or started >= cutoff:
+                continue
+        if empty_only and _op_count(path) > 0:
+            continue
+        if not (session_ids or cutoff is not None or empty_only):
+            continue  # --orphans alone selects no sessions
+        selected.append(path)
+
+    apply = bool(context.yes) and not context.dry_run
+    selected_set = set(selected)
+    # Two different "the rest" sets, and conflating them is a bug in both
+    # directions. Which blobs may go is decided by the sessions NOT selected:
+    # under bodies-only scope the selected files stay on disk, so asking "does
+    # any remaining file reference this blob" would always answer yes and prune
+    # nothing. Which blobs are orphaned is decided by what is left on disk.
+    others = [p for p in all_files if p not in selected_set]
+    on_disk_after = others if with_records else all_files
+
     removed_sessions: list[str] = []
-    kept: list[Path] = []
-    for path in _iter_session_files(base):
-        dt = _started_dt_from_path(path)
-        if dt is not None and dt < cutoff:
+    freed = 0
+    if with_records:
+        for path in selected:
+            freed += _size_of(path)
             removed_sessions.append(str(path))
-            if not dry_run:
+            if apply:
                 path.unlink(missing_ok=True)
-        else:
-            kept.append(path)
+
+    # Blobs: those referenced only by the selected sessions, plus (with
+    # --orphans) any already referenced by nothing at all. The sweep scans the
+    # REMAINING sessions, because a content-addressed blob is shared and must
+    # survive while any session still points at it.
+    doomed: list[Path] = []
+    if selected:
+        doomed += _blobs_only_referenced_by(base, selected, others)
+    if orphans:
+        doomed += _orphaned_blobs(base, on_disk_after)
     removed_blobs: list[str] = []
-    for blob in _orphaned_blobs(base, kept):
+    for blob in sorted(set(doomed)):
+        freed += _size_of(blob)
         removed_blobs.append(str(blob))
-        if not dry_run:
+        if apply:
             blob.unlink(missing_ok=True)
+
+    # Selecting sessions while pruning bodies only is a legitimate combination
+    # (drop the payloads, keep the history) but it removes nothing at all when
+    # those sessions carry no bodies — as an empty session never does. Saying so
+    # beats reporting "0 removed", which reads as "nothing to do here".
+    note: str | None = None
+    if selected and not with_records and not removed_blobs:
+        note = (
+            f"{len(selected)} session(s) selected, but they hold no body blobs, so "
+            "pruning bodies frees nothing; pass --records to delete the session "
+            "files themselves"
+        )
+
     payload: dict[str, Any] = {
-        "dry_run": dry_run,
-        "keep_days": keep_days,
+        "applied": apply,
+        "scope": "records+bodies" if with_records else "bodies",
+        "selected_sessions": len(selected),
         "removed_sessions": removed_sessions,
         "removed_blobs": removed_blobs,
-        "kept_sessions": len(kept),
+        "bytes_freed": freed,
+        "protected_recent": len(protected),
+        "sessions_remaining": len(all_files) - len(removed_sessions),
+        "note": note,
     }
-    _emit(context, payload, lambda: _print_gc(payload))
+    _emit(context, payload, lambda: _print_prune(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +698,85 @@ def _ref_key(ref: Any) -> str:
     return Path(text).stem if text.endswith(".json") else Path(text).name
 
 
+_DURATION_UNITS = {"d": 1, "w": 7, "m": 30, "y": 365}
+
+
+def _parse_duration(text: str) -> timedelta:
+    """Parse ``90d`` / ``18m`` / ``2y`` into a timedelta.
+
+    Months and years are nominal (30/365 days): this selects records for
+    deletion, so an exact calendar boundary would imply a precision the choice
+    does not have. A bare number is rejected rather than guessed at.
+    """
+    raw = text.strip().lower()
+    unit = raw[-1:] if raw else ""
+    if unit not in _DURATION_UNITS or not raw[:-1].isdigit():
+        raise UsageError(
+            f"could not read duration {text!r}",
+            hint="use a number and a unit: 90d, 12w, 18m, 2y",
+        )
+    amount = int(raw[:-1])
+    if amount <= 0:
+        raise UsageError(
+            "a zero-length range would select every session; refusing",
+            hint="pass a real range, or name sessions with --session",
+        )
+    return timedelta(days=amount * _DURATION_UNITS[unit])
+
+
+def _parse_date(text: str) -> datetime:
+    try:
+        return datetime.strptime(text.strip(), "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise UsageError(f"--before expects YYYY-MM-DD, got {text!r}") from exc
+
+
+def _session_id_of(path: Path) -> str:
+    """The session id encoded in ``<timestamp>_<id>.jsonl``."""
+    stem = path.stem
+    return stem.split("_", 1)[1] if "_" in stem else stem
+
+
+def _op_count(path: Path) -> int:
+    return sum(1 for rec in _read_records(path)[0] if rec.data.get("type") == "op")
+
+
+def _size_of(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _body_refs_of(paths: list[Path]) -> set[str]:
+    refs: set[str] = set()
+    for path in paths:
+        for rec in _read_records(path)[0]:
+            for side in ("request", "response"):
+                container = rec.data.get(side)
+                if isinstance(container, dict):
+                    ref = container.get("body_ref")
+                    if ref:
+                        refs.add(_ref_key(ref))
+    return refs
+
+
+def _blobs_only_referenced_by(
+    base: Path, selected: list[Path], remaining: list[Path]
+) -> list[Path]:
+    """Blobs the selected sessions reference and no remaining session does.
+
+    Blobs are content-addressed and therefore shared: the same payload written
+    by three runs is one file, so it may only go when the last referent does.
+    """
+    bodies = base / _BLOB_DIR
+    if not bodies.is_dir():
+        return []
+    all_blobs = {p.stem: p for p in bodies.rglob(_BLOB_GLOB) if p.is_file()}
+    doomed = _body_refs_of(selected) - _body_refs_of(remaining)
+    return sorted(all_blobs[key] for key in doomed if key in all_blobs)
+
+
 def _orphaned_blobs(base: Path, session_files: list[Path]) -> list[Path]:
     """Body blobs under ``bodies/`` referenced by none of ``session_files``."""
     bodies = base / _BLOB_DIR
@@ -672,15 +871,27 @@ def _print_doctor(payload: dict[str, Any]) -> None:
         click.echo(f"  {blob}")
 
 
-def _print_gc(payload: dict[str, Any]) -> None:
-    tag = "DRY RUN" if payload["dry_run"] else "DELETED"
-    click.echo(f"[{tag}] removed sessions: {len(payload['removed_sessions'])}")
-    for session in payload["removed_sessions"]:
+def _print_prune(payload: dict[str, Any]) -> None:
+    tag = "REMOVED" if payload["applied"] else "WOULD REMOVE"
+    freed = payload["bytes_freed"]
+    human = f"{freed / 1024:.1f} KiB" if freed < 1024 * 1024 else f"{freed / 1048576:.1f} MiB"
+    click.echo(f"scope: {payload['scope']}")
+    click.echo(f"selected sessions: {payload['selected_sessions']}")
+    click.echo(f"[{tag}] sessions: {len(payload['removed_sessions'])}")
+    for session in payload["removed_sessions"][:20]:
         click.echo(f"  {session}")
-    click.echo(f"[{tag}] removed blobs: {len(payload['removed_blobs'])}")
-    for blob in payload["removed_blobs"]:
-        click.echo(f"  {blob}")
-    click.echo(f"kept sessions: {payload['kept_sessions']}")
+    if len(payload["removed_sessions"]) > 20:
+        click.echo(f"  … and {len(payload['removed_sessions']) - 20} more")
+    click.echo(f"[{tag}] body blobs: {len(payload['removed_blobs'])}")
+    click.echo(f"reclaims: {human}")
+    click.echo(
+        f"sessions remaining: {payload['sessions_remaining']} "
+        f"({payload['protected_recent']} most-recent protected)"
+    )
+    if payload.get("note"):
+        click.echo(f"note: {payload['note']}")
+    if not payload["applied"]:
+        click.echo("nothing was deleted; pass --yes to apply")
 
 
 def _print_plan(payload: dict[str, Any]) -> None:

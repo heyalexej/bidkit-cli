@@ -313,79 +313,138 @@ def test_doctor_reports_orphaned_blob(runner: CliRunner, tmp_path: Path) -> None
 
 
 # ---------------------------------------------------------------------------
-# gc
+# prune
+#
+# The session log is a durable record, so these tests are mostly about what
+# prune REFUSES to do: nothing expires on its own, and history only goes when
+# it is asked for explicitly.
 # ---------------------------------------------------------------------------
 
-def test_gc_removes_old_sessions_and_orphaned_blobs(
+def _aged_session(tmp_path: Path, session_id: str, days: int, sha: str | None = None):
+    stamp = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y%m%dT%H%M%SZ")
+    records = [_rec(0, "invocation")]
+    if sha:
+        records.append(_rec(1, "op", operation_id="sell_inventory.createOffer",
+                            request={"body_ref": sha, "body_sha256": sha}))
+    records.append(_rec(len(records), "end", exit_code=0))
+    return _write_session(tmp_path, session_id=session_id, stamp=stamp, records=records)
+
+
+def test_prune_without_a_selection_removes_nothing(
     runner: CliRunner, tmp_path: Path,
 ) -> None:
-    now = datetime.now(UTC)
-    old_stamp = (now - timedelta(days=100)).strftime("%Y%m%dT%H%M%SZ")
-    new_stamp = (now - timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
-    old_sha = "a" * 64
-    new_sha = "b" * 64
-    orphan_sha = "c" * 64
+    """Run bare, prune must select nothing: there is no retention policy."""
+    session = _aged_session(tmp_path, "01JBAREPRUNE00000000000A", days=900)
+    result = runner.invoke(session_group, ["prune"], obj=_ctx(tmp_path, yes=True))
+    assert result.exit_code != 0
+    assert session.exists()
 
-    old_session = _write_session(
-        tmp_path, session_id="01JOLDGC00000000000000000", stamp=old_stamp,
-        records=[
-            _rec(0, "invocation"),
-            _rec(1, "op", operation_id="createOffer",
-                 request={"body_ref": old_sha, "body_sha256": old_sha}),
-            _rec(2, "end", exit_code=0),
-        ],
-    )
-    _write_session(
-        tmp_path, session_id="01JNEWGC00000000000000000", stamp=new_stamp,
-        records=[
-            _rec(0, "invocation"),
-            _rec(1, "op", operation_id="createOffer",
-                 request={"body_ref": new_sha, "body_sha256": new_sha}),
-            _rec(2, "end", exit_code=0),
-        ],
-    )
-    old_blob = _write_blob(tmp_path, old_sha, {"old": True})
-    new_blob = _write_blob(tmp_path, new_sha, {"new": True})
-    orphan_blob = _write_blob(tmp_path, orphan_sha, {"orphan": True})
+
+def test_prune_previews_without_yes(runner: CliRunner, tmp_path: Path) -> None:
+    sha = "a" * 64
+    session = _aged_session(tmp_path, "01JPREVIEW0000000000000A", days=900, sha=sha)
+    blob = _write_blob(tmp_path, sha, {"payload": True})
 
     data = _out(runner.invoke(
-        session_group, ["gc", "--keep-days", "30"], obj=_ctx(tmp_path),
+        session_group, ["prune", "--older-than", "30d", "--keep-last", "0"],
+        obj=_ctx(tmp_path),
     ))
-    assert data["dry_run"] is False
-    assert str(old_session) in data["removed_sessions"]
-    assert data["kept_sessions"] == 1
-    # The old session's blob is now referenced by nobody remaining -> swept.
-    assert str(old_blob) in data["removed_blobs"]
-    # The orphan blob was never referenced -> swept.
-    assert str(orphan_blob) in data["removed_blobs"]
-    # The kept session still references new_blob -> preserved.
-    assert str(new_blob) not in data["removed_blobs"]
-
-    assert not old_session.exists()
-    assert not old_blob.exists()
-    assert not orphan_blob.exists()
-    assert new_blob.exists()
+    assert data["applied"] is False
+    assert data["selected_sessions"] == 1
+    assert session.exists() and blob.exists(), "a preview must touch nothing"
 
 
-def test_gc_dry_run_keeps_files(runner: CliRunner, tmp_path: Path) -> None:
-    now = datetime.now(UTC)
-    old_stamp = (now - timedelta(days=100)).strftime("%Y%m%dT%H%M%SZ")
-    old_session = _write_session(
-        tmp_path, session_id="01JDRYGC0000000000000000", stamp=old_stamp,
-        records=[_rec(0, "invocation"), _rec(1, "end", exit_code=0)],
-    )
+def test_prune_bodies_keeps_the_record(runner: CliRunner, tmp_path: Path) -> None:
+    """Default scope drops payloads while the history stays readable."""
+    sha = "a" * 64
+    session = _aged_session(tmp_path, "01JBODIES00000000000000A", days=900, sha=sha)
+    blob = _write_blob(tmp_path, sha, {"payload": True})
+
     data = _out(runner.invoke(
-        session_group, ["gc", "--keep-days", "30"], obj=_ctx(tmp_path, dry_run=True),
+        session_group, ["prune", "--older-than", "30d", "--keep-last", "0"],
+        obj=_ctx(tmp_path, yes=True),
     ))
-    assert data["dry_run"] is True
-    assert str(old_session) in data["removed_sessions"]
-    # Dry-run reports intent but touches nothing on disk.
-    assert old_session.exists()
+    assert data["applied"] is True
+    assert data["scope"] == "bodies"
+    assert str(blob) in data["removed_blobs"]
+    assert not blob.exists()
+    # The session — and the digest proving what the body was — survives.
+    assert session.exists()
+    assert sha in session.read_text()
 
 
-def test_gc_rejects_negative_keep_days(runner: CliRunner, tmp_path: Path) -> None:
+def test_prune_keeps_blobs_another_session_still_references(
+    runner: CliRunner, tmp_path: Path,
+) -> None:
+    """Blobs are content-addressed and shared; the last referent frees them."""
+    sha = "a" * 64
+    _aged_session(tmp_path, "01JSHAREDOLD000000000000", days=900, sha=sha)
+    _aged_session(tmp_path, "01JSHAREDNEW000000000000", days=1, sha=sha)
+    blob = _write_blob(tmp_path, sha, {"payload": True})
+
+    runner.invoke(
+        session_group, ["prune", "--older-than", "30d", "--keep-last", "0", "--records"],
+        obj=_ctx(tmp_path, yes=True),
+    )
+    assert blob.exists(), "the recent session still points at this blob"
+
+
+def test_prune_records_requires_an_explicit_range(
+    runner: CliRunner, tmp_path: Path,
+) -> None:
+    session = _aged_session(tmp_path, "01JNORANGE0000000000000A", days=900)
     result = runner.invoke(
-        session_group, ["gc", "--keep-days", "-1"], obj=_ctx(tmp_path),
+        session_group, ["prune", "--orphans", "--records"], obj=_ctx(tmp_path, yes=True),
+    )
+    assert result.exit_code != 0
+    assert session.exists()
+
+
+def test_prune_refuses_a_zero_length_range(runner: CliRunner, tmp_path: Path) -> None:
+    """`--older-than 0d` means "everything"; that must never be a typo away."""
+    session = _aged_session(tmp_path, "01JZERORANGE000000000000", days=900)
+    result = runner.invoke(
+        session_group, ["prune", "--older-than", "0d", "--records"],
+        obj=_ctx(tmp_path, yes=True),
+    )
+    assert result.exit_code != 0
+    assert session.exists()
+
+
+def test_prune_keep_last_protects_recent_sessions(
+    runner: CliRunner, tmp_path: Path,
+) -> None:
+    """The floor survives a range that would otherwise take everything."""
+    older = _aged_session(tmp_path, "01JFLOOR000000000000000A", days=900)
+    newer = _aged_session(tmp_path, "01JFLOOR000000000000000B", days=800)
+    data = _out(runner.invoke(
+        session_group, ["prune", "--older-than", "30d", "--keep-last", "1", "--records"],
+        obj=_ctx(tmp_path, yes=True),
+    ))
+    assert data["protected_recent"] == 1
+    assert newer.exists(), "the most recent session is protected"
+    assert not older.exists()
+
+
+def test_prune_orphans_only_touches_unreferenced_blobs(
+    runner: CliRunner, tmp_path: Path,
+) -> None:
+    sha = "a" * 64
+    session = _aged_session(tmp_path, "01JORPHANS000000000000A", days=900, sha=sha)
+    referenced = _write_blob(tmp_path, sha, {"payload": True})
+    orphan = _write_blob(tmp_path, "c" * 64, {"orphan": True})
+
+    data = _out(runner.invoke(
+        session_group, ["prune", "--orphans"], obj=_ctx(tmp_path, yes=True),
+    ))
+    assert str(orphan) in data["removed_blobs"]
+    assert not orphan.exists()
+    assert referenced.exists() and session.exists()
+
+
+def test_prune_rejects_an_unreadable_duration(runner: CliRunner, tmp_path: Path) -> None:
+    result = runner.invoke(
+        session_group, ["prune", "--older-than", "90"], obj=_ctx(tmp_path, yes=True),
     )
     assert result.exit_code != 0
 

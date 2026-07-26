@@ -347,7 +347,7 @@ def build_cli() -> click.Group:
     cli.add_command(completion_command)
     cli.add_command(skill_command)
 
-    # Session-log command group (`bidkit session list/show/grep/doctor/gc/revert`),
+    # Session-log command group (`bidkit session list/show/grep/doctor/prune/revert`),
     # owned by a parallel worker. Registered exactly like the groups above once
     # commands/session.py lands; its absence must never break the rest of the CLI.
     try:

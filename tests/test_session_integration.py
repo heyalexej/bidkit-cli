@@ -315,7 +315,7 @@ def test_inspecting_sessions_does_not_create_sessions(
     """Reading the log must not extend it.
 
     If ``session list`` logged itself, the count would change every time it ran
-    and ``doctor``/``gc`` would inflate the very thing they audit.
+    and ``doctor``/``prune`` would inflate the very thing they audit.
     """
     from click.testing import CliRunner
 
