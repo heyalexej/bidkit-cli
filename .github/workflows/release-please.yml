@@ -1,8 +1,18 @@
 name: release-please
 
+# Manual only. While this tool has a single user and installs from git, a
+# release PR regenerated on every push is noise: it proposes a version nobody
+# is waiting for and has to be closed again each time. Run it when a release is
+# actually wanted — the changelog is derived from the commits either way, so
+# nothing is lost by waiting.
+#
+#   gh workflow run release-please.yml
+#
+# Restore automatic behaviour by adding back:
+#   push:
+#     branches: [main]
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
