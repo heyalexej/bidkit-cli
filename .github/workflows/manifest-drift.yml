@@ -10,12 +10,14 @@ on:
       - src/bidkit_cli/generated/**
       - patches/**
       - scripts/**
+      - skills/**
       - .github/workflows/manifest-drift.yml
   pull_request:
     paths:
       - src/bidkit_cli/generated/**
       - patches/**
       - scripts/**
+      - skills/**
 
 jobs:
   regenerate-and-verify:
@@ -48,6 +50,15 @@ jobs:
       # project and reinstall bidkit from PyPI over the pinned checkout above.
       - name: Regenerate manifest from the clean bidkit checkout
         run: .venv/bin/python scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
+
+      # The skill's generated pages are a view over the same manifest, so they
+      # drift for exactly the same reasons and are held to the same standard:
+      # regenerating them must produce no diff.
+      - name: Regenerate the skill docs
+        run: PYTHONPATH=src .venv/bin/python scripts/generate_skill_docs.py
+
+      - name: Skill docs drift
+        run: git diff --exit-code -- skills/
 
       - name: Manifest/resource parity + tests
         run: |

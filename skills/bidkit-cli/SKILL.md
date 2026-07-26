@@ -1,6 +1,6 @@
 ---
 name: bidkit-cli
-description: Drive the eBay REST APIs from the shell via the bidkit CLI. Discover, inspect, safely call, and verify any of the 455 generated operations across 41 services. Read-only by default; mutations require explicit --allow-write.
+description: Drive the eBay REST APIs from the shell via the bidkit CLI. Discover, inspect, safely call, and verify any of the 455 generated operations across 41 services. Read-only by default; mutations require explicit --allow-write. Every invocation is recorded to an append-only session log you can inspect and, with gates, revert.
 ---
 
 # bidkit CLI skill
@@ -105,6 +105,21 @@ never touches the network.
   listing (`--expect active|visible|not_listed|not_found`), exits non-zero on an unmet
   expectation. Pass `--sku` to also read the seller side.
 
+## Session log (audit trail)
+
+Every invocation appends to an append-only JSONL trail under
+`$XDG_STATE_HOME/bidkit/sessions`; inspect it, and (with gates) revert it.
+Set `BIDKIT_SESSION_ID` once per work stream so a multi-step task shares one file.
+
+```bash
+bidkit session list --since 7                  # newest-first: id, started, invocations, ops, env, exits
+bidkit session show <id> --ops-only            # the dispatched operations, in order
+bidkit session grep "createOffer|publishOffer"  # regex across all sessions
+bidkit session revert <id>                     # dry-run compensating plan (--execute needs --allow-write --yes)
+```
+
+See `references/session-log.md` for record types, inspecting, reverting, and pruning.
+
 ## Output
 
 - Default is **JSON when piped, a table when interactive**. Pass `--format json|table|text|raw`.
@@ -119,8 +134,19 @@ never touches the network.
 
 `0` ok · `2` usage · `3` config/auth · `4` API error · `5` transport · `6` validation · `7` safety · `8` I/O · `130` interrupted. `verify-public` exits `1` on an unmet expectation. See `references/output-and-errors.md` for the error taxonomy (`classification`/`retryable`/`retry_after`).
 
+## Utility commands
+
+| Command        | What it does                                                                  |
+|----------------|-------------------------------------------------------------------------------|
+| `config`       | Resolved config + precedence (`config show`); marketplace locales (`config locales`). |
+| `capabilities` | Which generated operations this account can actually use (`capabilities list`/`describe`). |
+| `version`      | Print CLI and SDK versions.                                                    |
+| `skill`        | Print the location of the packaged agent skill.                                |
+| `completion`   | Generate shell completion scripts (`completion {zsh|bash|fish}`).              |
+
 ## Go deeper (load only what you need)
 
+- `references/session-log.md` — session log: record types, inspect, revert, prune.
 - `references/authentication.md` — config, `auth doctor`/`login`, token cache, scopes.
 - `references/configuration.md` — config file format, env vars, precedence.
 - `references/output-and-errors.md` — formats, `--select`, raw mode, error shape.
