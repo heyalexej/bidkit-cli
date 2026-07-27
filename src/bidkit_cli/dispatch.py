@@ -868,6 +868,12 @@ def _render_result(context: CliContext, operation: OperationRecord, result: Any)
 
     raw_response = context.effective_format == "raw"
     payload: Any = body
+    # A success with an empty body but a Location header is an ID-minting
+    # response (e.g. Media createVideo): the header is the only place the new
+    # resource id exists, so surface it as the payload instead of null.
+    location = result.headers.get("location")
+    if body is None and location and result.is_success:
+        payload = {"location": location}
     if raw_response:
         payload = {
             "status": result.status_code,
@@ -1260,7 +1266,7 @@ def _response_meta(operation: OperationRecord, response: httpx2.Response) -> dic
     """
     request_id = _request_id(response)
     trace_id = _trace_id(response)
-    return {
+    meta = {
         "operation": operation.key,
         "http_method": operation.http_method,
         "path": operation.path,
@@ -1268,6 +1274,12 @@ def _response_meta(operation: OperationRecord, response: httpx2.Response) -> dic
         "request_id": request_id or trace_id,
         "trace_id": trace_id,
     }
+    # Several create* operations return the new resource id only in the
+    # Location header (empty body), so the envelope must carry it.
+    location = response.headers.get("location")
+    if location:
+        meta["location"] = location
+    return meta
 
 
 def _filter_headers(headers: httpx2.Headers) -> dict[str, str]:

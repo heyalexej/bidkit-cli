@@ -44,9 +44,13 @@ def build_generated_groups(manifest: Manifest) -> list[click.Group]:
         for service_key in services_in_ns:
             service = manifest.service(service_key)
             svc_ops = manifest.operations_for_service(service_key)
+            # Manifest versions come in both "v1.2.3" and "1.2.3" forms.
+            version = str(service.version)
+            if not version.startswith("v"):
+                version = f"v{version}"
             svc_group = click.Group(
                 service.cli_name,
-                help=f"{service.title} v{service.version} — {len(svc_ops)} operation(s).",
+                help=f"{service.title} {version} — {len(svc_ops)} operation(s).",
             )
             for operation in svc_ops:
                 svc_group.add_command(_operation_command(operation))
