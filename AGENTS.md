@@ -123,6 +123,16 @@ requires a manifest edit, regenerate it instead.
   the test suite passes either way and will not catch it.
 - Conventional Commits. Comments explain *why*, in timeless terms — never cite
   review rounds, tickets, or "recently changed".
+- **The installed tool tracks `main`.** The globally installed `bidkit` is used
+  in daily seller operations, so a fix that is merged but not reinstalled is a
+  fix nobody has. After every merge to `main`, reinstall it:
+
+  ```bash
+  uv tool install --reinstall git+https://github.com/heyalexej/bidkit-cli
+  ```
+
+  and verify with a cheap read (e.g. `bidkit --help` showing the new behavior)
+  that the fix is actually in the installed binary.
 
 ## The session log
 
