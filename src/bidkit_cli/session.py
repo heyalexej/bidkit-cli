@@ -230,6 +230,10 @@ def _jsonable(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, bytes | bytearray | memoryview):
+        # Raw bytes anywhere in a record must not kill the recorder; a
+        # placeholder keeps the record serializable.
+        return {"binary": True, "size": len(bytes(value))}
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -681,6 +685,17 @@ class SessionRecorder:
         """
         if body is None:
             return {"body": None, "body_ref": None, "body_sha256": None}
+        if isinstance(body, bytes | bytearray | memoryview):
+            # Binary uploads (e.g. Media uploadVideo) are hashed, never
+            # serialized: the log stays JSON and the blob store stays small,
+            # while the digest still content-addresses what was sent.
+            raw = bytes(body)
+            digest = hashlib.sha256(raw).hexdigest()
+            return {
+                "body": {"binary": True, "size": len(raw)},
+                "body_ref": None,
+                "body_sha256": digest,
+            }
         redacted = _redact_value(_jsonable(body))
         data = orjson.dumps(redacted)
         digest = hashlib.sha256(data).hexdigest()

@@ -136,6 +136,63 @@ def test_api_error_translated(cli_ctx: CliContext, manifest: Manifest) -> None:
     client.close()
 
 
+def _location_ctx(manifest: Manifest) -> tuple[CliContext, EbayClient]:
+    """A context whose transport answers 201 + Location and an empty body."""
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            201,
+            headers={"Location": "https://apim.ebay.com/commerce/media/v1_beta/video/abc123"},
+        )
+
+    client = EbayClient(
+        EbayConfig(access_token="t"),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+    )
+    ctx = CliContext()
+    ctx._manifest = manifest
+    ctx._client = client
+    ctx._config = client.config
+    ctx.output_format = "json"
+    ctx.pretty = False
+    ctx.allow_write_expert = True
+    ctx.yes = True
+    return ctx, client
+
+
+def test_empty_body_success_surfaces_location(manifest: Manifest) -> None:
+    ctx, client = _location_ctx(manifest)
+    op = manifest.get("commerce_media.createVideo")
+    out = _run(
+        ctx, op, path_params={}, query_params={}, header_params={},
+        body={"title": "t", "size": 1, "classification": ["ITEM"]}, files={},
+    )
+    import json
+
+    payload = json.loads(out)
+    # The Location header is the only place the new resource id exists;
+    # an id-minting success must not render as null.
+    assert payload == {
+        "location": "https://apim.ebay.com/commerce/media/v1_beta/video/abc123"
+    }
+    client.close()
+
+
+def test_include_meta_carries_location(manifest: Manifest) -> None:
+    ctx, client = _location_ctx(manifest)
+    ctx.include_meta = True
+    op = manifest.get("commerce_media.createVideo")
+    out = _run(
+        ctx, op, path_params={}, query_params={}, header_params={},
+        body={"title": "t", "size": 1, "classification": ["ITEM"]}, files={},
+    )
+    import json
+
+    payload = json.loads(out)
+    assert payload["meta"]["status"] == 201
+    assert payload["meta"]["location"].endswith("/video/abc123")
+    client.close()
+
+
 def test_raw_format_includes_status_and_headers(cli_ctx: CliContext, manifest: Manifest) -> None:
     cli_ctx.output_format = "raw"
     op = manifest.get("sell_inventory.getInventoryItem")

@@ -208,6 +208,35 @@ def test_large_body_spills_to_blob(
         assert hashlib.sha256(blob.read_bytes()).hexdigest() == body_record["body_sha256"]
 
 
+def test_binary_body_hashed_not_serialized(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    rec = _start_rec(tmp_path, monkeypatch)
+    payload = b"\x00\x01\xff" * 1000
+    rec.record_op(
+        operation_id="commerce_media.uploadVideo", classification="unknown",
+        http={"method": "POST", "url": "u", "status": 200,
+              "elapsed_ms_total": 1, "attempts": []},
+        ebay={"request_id": None, "rlogid": None},
+        request_body=payload, response_body=None, ids={},
+    )
+    rec.finish(0)
+
+    # The recorder must survive a binary body: op AND end records exist.
+    assert rec.enabled
+    records = _read_records(rec.path)
+    assert [r["type"] for r in records] == ["invocation", "op", "end"]
+
+    op = records[1]
+    assert op["request"]["body"] == {"binary": True, "size": len(payload)}
+    assert op["request"]["body_ref"] is None
+    import hashlib
+
+    assert op["request"]["body_sha256"] == hashlib.sha256(payload).hexdigest()
+    # The raw bytes are hashed, never spilled to the blob store.
+    assert not (tmp_path / "bodies").exists()
+
+
 # ------------------------------------------------------------------------------------------------
 # Permissions
 # ------------------------------------------------------------------------------------------------
