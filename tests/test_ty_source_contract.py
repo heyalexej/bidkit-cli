@@ -39,6 +39,7 @@ def test_stream_to_file_without_output_file_raises_usage_error(
     ctx = CliContext()
     ctx.output_file = None
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     # The guard runs before the stream context manager is entered, so a dummy
     # is safe here.
     with pytest.raises(UsageError) as exc_info:

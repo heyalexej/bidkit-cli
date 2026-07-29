@@ -49,11 +49,25 @@ from bidkit_cli.commands.options import (
 )
 from bidkit_cli.rendering import emit_json
 
+
+def _subgroup(parent: click.Command, name: str) -> click.Group:
+    """Resolve ``name`` under ``parent`` as a nested group.
+
+    The generated command tree is a known nested-Group structure; narrowing
+    each hop with an assertion keeps the tree reads literal instead of widening
+    to ``Any``.
+    """
+    assert isinstance(parent, click.Group)
+    child = parent.commands[name]
+    assert isinstance(child, click.Group)
+    return child
+
+
 # A representative generated GET command with the universal escape hatches and
 # no request body, used for parity comparisons against ``api call``.
-API_CALL = cli.commands["api"].commands["call"]
+API_CALL = _subgroup(cli, "api").commands["call"]
 GENERATED_GET = (
-    cli.commands["sell"].commands["inventory"].commands["get-inventory-items"]
+    _subgroup(_subgroup(cli, "sell"), "inventory").commands["get-inventory-items"]
 )
 DESCRIBE_OP = "sell_inventory.getInventoryItems"
 
@@ -227,8 +241,7 @@ def test_generated_json_body_exposes_only_body_and_body_json(
 ) -> None:
     """A JSON-body generated command exposes only --body/--body-json from the suite."""
     command = (
-        cli.commands["sell"]
-        .commands["inventory"]
+        _subgroup(_subgroup(cli, "sell"), "inventory")
         .commands["create-or-replace-inventory-item"]
     )
     assert _filter(_option_order(command), BODY_OPTIONS) == ["--body", "--body-json"]
@@ -239,8 +252,7 @@ def test_generated_multipart_file_help_lists_operation_file_fields(
 ) -> None:
     """A multipart command names its file fields in --file's help."""
     command = (
-        cli.commands["commerce"]
-        .commands["media"]
+        _subgroup(_subgroup(cli, "commerce"), "media")
         .commands["create-image-from-file"]
     )
     file_option = next(
