@@ -30,6 +30,7 @@ from ..context import CliContext
 from ..errors import SafetyError
 from ..rendering import emit_json
 from ..workflows import FRONTEND_STATES, verify_public
+from .options import public_poll_options
 
 
 def inject_workflow_commands(namespace_groups: list[click.Group]) -> list[click.Group]:
@@ -93,7 +94,7 @@ def _verify_public_command() -> click.Command:
     @click.option("--expect-title", default=None, help="Assert the public title matches exactly.")
     @click.option("--expect-description-contains", default=None,
                   help="Assert the public description contains this marker (e.g. 'TEST ONLY').")
-    @click.option("--expect-image-count", type=int, default=None,
+    @click.option("--expect-image-count", type=click.IntRange(min=0), default=None,
                   help="Assert the public image count (primary + additional).")
     @click.option("--expect-price", default=None,
                   help="Assert the public price value (e.g. 12.50).")
@@ -102,10 +103,7 @@ def _verify_public_command() -> click.Command:
     @click.option("--expect-category-id", default=None, help="Assert the public category id.")
     @click.option("--expect-buying-option", default=None,
                   help="Assert a buying option is present (e.g. FIXED_PRICE).")
-    @click.option("--wait", "wait_seconds", type=float, default=0.0,
-                  help="Seconds to wait for the expected public state (default: one check).")
-    @click.option("--poll", "poll_interval", type=float, default=15.0,
-                  help="Seconds between Browse polls (default 15).")
+    @public_poll_options()
     @click.option("--full", is_flag=True, default=False,
                   help="Retain the full Browse response body (default: a bounded, "
                        "privacy-safe projection). Expert use; the legal/contact blob is large.")
@@ -321,10 +319,7 @@ def _test_run_cleanup_report_command() -> click.Command:
     @click.command("cleanup-report",
                    help="Check current seller + public state for a run's records and report.")
     @click.option("--run-id", required=True)
-    @click.option("--wait", "wait_seconds", type=float, default=0.0,
-                  help="Seconds to wait for public/Browse convergence per listing.")
-    @click.option("--poll", "poll_interval", type=float, default=15.0,
-                  help="Seconds between Browse polls.")
+    @public_poll_options()
     @click.pass_context
     def _cmd(ctx, run_id, wait_seconds, poll_interval):
         context: CliContext = ctx.obj
@@ -422,34 +417,37 @@ def _test_run_execute_command() -> click.Command:
     @click.option("--source-sku", "source_skus", multiple=True,
                   help="Real source SKU cross-wired into the test (repeatable).")
     @click.option("--test-sku", "test_skus", multiple=True,
-                  help="Test SKU to create (repeatable).")
+                  help="Test SKU to record against this run for planning and "
+                       "cleanup tracking (repeatable). The inventory item itself "
+                       "is created with the normal commands and --test-run-id.")
     @click.option("--cleanup", is_flag=True, default=False,
                   help="Withdraw + delete every recorded offer/inventory item, then report.")
     @click.option("--plan-only", is_flag=True, default=False,
                   help="Print the plan and exit without cleaning up.")
-    @click.option("--wait", "wait_seconds", type=float, default=0.0,
-                  help="Seconds to wait for public/Browse convergence per listing.")
-    @click.option("--poll", "poll_interval", type=float, default=15.0)
+    @public_poll_options()
     @click.pass_context
     def _cmd(ctx, run_id, source_skus, test_skus,
              cleanup, plan_only, wait_seconds, poll_interval):
         context: CliContext = ctx.obj
         base = _ledger_base_dir(context)
         rid = run_id or new_run_id()
-        # Load the existing (auto-recorded) ledger, or init a fresh one. Seed
-        # SKUs are merged in either case — silently dropping --source-sku/
-        # --test-sku on an existing ledger would make the flags no-ops after the
-        # first auto-recorded write.
+        # Load the existing (auto-recorded) ledger if present, or init a fresh
+        # one in memory. Reading is allowed in every mode so the plan reflects
+        # what is really recorded; the persistence decision is made below so the
+        # preview modes (--plan-only, global --dry-run) never touch the
+        # filesystem.
         try:
             ledger = load_ledger(rid, base_dir=base)
         except FileNotFoundError:
             ledger = RunLedger(run_id=rid, created_at=datetime.now(UTC).isoformat())
+        # Seed SKUs are merged in memory either way — silently dropping
+        # --source-sku/--test-sku on an existing ledger would make the flags
+        # no-ops after the first auto-recorded write. No I/O happens here.
         for sku in source_skus:
             if sku not in ledger.source_skus:
                 ledger.source_skus.append(sku)
         for sku in test_skus:
             ledger.add_test_sku(sku)
-        save_ledger(ledger, base_dir=base)
 
         plan = {
             "workflow": "sell_inventory.test_run.execute",
@@ -465,17 +463,24 @@ def _test_run_execute_command() -> click.Command:
                 "and cleans up."
             ),
         }
+        # Preview modes render an accurate plan but must NOT create, save, or
+        # update the ledger: an agent surveying a run with --plan-only or
+        # --dry-run expects no side effects. The ledger may be read above, but
+        # nothing is written before returning.
         if plan_only or context.dry_run:
             emit_json(plan, pretty=context.pretty)
             return
         if not cleanup:
+            # Normal non-preview path: persist the merged seeds, then report.
+            save_ledger(ledger, base_dir=base)
             emit_json(plan, pretty=context.pretty)
             return
         # Cleanup withdraws AND deletes, which are destructive mutations. The
         # documented contract (SKILL.md, safety reference, and the generated
         # delete-* commands) is --allow-write --yes; the command's own hint said
-        # so but the code never checked --yes. Both gates are now
-        # enforced, and the hint matches exactly.
+        # so but the code never checked --yes. Both gates are now enforced, and
+        # the hint matches exactly. The gate is checked before any write so a
+        # refusal leaves the ledger untouched.
         if not context.allow_write or not context.yes:
             raise SafetyError(
                 "test-run execute --cleanup withdraws and deletes seller records; "
@@ -483,6 +488,9 @@ def _test_run_execute_command() -> click.Command:
                 hint="bidkit sell inventory test-run execute --run-id RID "
                      "--cleanup --allow-write --yes",
             )
+        # Persist the merged seeds before the destructive cleanup so the run's
+        # intent is durable even if cleanup crashes partway.
+        save_ledger(ledger, base_dir=base)
         # Idempotent cleanup: withdraw + delete each offer, delete each SKU.
         report = _cleanup_run(context, ledger, base,
                               wait_seconds=wait_seconds, poll_interval=poll_interval)

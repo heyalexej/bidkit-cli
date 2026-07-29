@@ -504,3 +504,48 @@ def test_revert_dry_run_plan(runner: CliRunner, tmp_path: Path) -> None:
     assert data["executed"] is False
     # Blocked/irreversible steps are always present in the payload, even empty.
     assert "blocked" in data
+
+
+def test_revert_global_dry_run_overrides_execute(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Global --dry-run overrides --execute: no gates, no dispatch, executed=false.
+
+    --dry-run is the safer flag, so combined with --execute the command previews
+    the plan instead of running it. The write/--yes gates a real execution needs
+    are not enforced (this succeeds without them), and ``execute_plan`` is never
+    called — the payload reports ``executed: false`` with empty ``results``,
+    never a misleading "ok" execution. Ordinary ``--execute`` (without the
+    global --dry-run) still refuses without the gates (covered above).
+    """
+    pytest.importorskip("bidkit_cli.session_revert")
+    _write_session(
+        tmp_path, session_id="01JDRYRUN0000000000000000", stamp="20260101T120000Z",
+        records=[
+            _rec(0, "invocation"),
+            _rec(
+                1, "op", operation_id="sell_inventory.createOffer",
+                ids={"offer_id": "O1"}, classification="write",
+            ),
+            _rec(2, "end", exit_code=0),
+        ],
+    )
+
+    def _must_not_run(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise AssertionError("execute_plan must not run under global --dry-run")
+
+    monkeypatch.setattr("bidkit_cli.session_revert.execute_plan", _must_not_run)
+
+    # No --allow-write/--yes: the dry-run override must not require them, and
+    # exit 0 proves the gates were skipped rather than raised.
+    data = _out(runner.invoke(
+        session_group,
+        ["revert", "01JDRYRUN0000000000000000", "--execute"],
+        obj=_ctx(tmp_path, dry_run=True),
+    ))
+    assert data["executed"] is False
+    assert data["results"] == []
+    # The plan itself is still produced, so the preview is useful rather than a
+    # misleading empty "ok" result.
+    assert data["steps"]
+    assert data["steps"][0]["operation_key"] == "sell_inventory.deleteOffer"

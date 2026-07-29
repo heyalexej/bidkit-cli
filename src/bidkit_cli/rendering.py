@@ -10,13 +10,20 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import orjson
 from pydantic import BaseModel
 
 from .context import CliContext
 from .errors import IoError
+
+if TYPE_CHECKING:
+    # Rich is a hard dependency; the import is type-only here so the console
+    # helper's return annotation resolves under ty without forcing a runtime
+    # import at module load (the table paths import Rich lazily so a missing
+    # install still degrades to JSON/plain text, not an import crash).
+    from rich.console import Console
 
 
 def emit_json(value: Any, *, pretty: bool) -> None:
@@ -146,15 +153,43 @@ def write_output_file(
 # Table rendering
 # ---------------------------------------------------------------------------
 
-def render_table(value: Any, *, title: str | None = None) -> str:
+def make_table_console(
+    *, no_color: bool, force_terminal: bool | None = None
+) -> Console:
+    """The single Rich console every table path constructs.
+
+    Centralizing construction keeps the global ``--no-color`` flag honest across
+    the generated operation tables (:func:`render_table`), the offline
+    ``api list``/``search`` tables, and the ``session`` tables. Rich's own
+    ``no_color`` switch only strips color and *keeps* text styles such as bold,
+    so when ``--no-color`` is set we instead disable the whole color system
+    (``color_system=None``): that is the one switch that drops every ANSI
+    style/color escape. That matters because these tables are captured/printed
+    with ``force_terminal`` so the box drawing survives a pipe, which would
+    otherwise keep emitting escapes regardless of the flag. ``highlight`` stays
+    off everywhere so token auto-highlighting — which is independent of
+    ``no_color`` — cannot leak either.
+    """
+    from rich.console import Console
+
+    color_system = None if no_color else "auto"
+    return Console(
+        highlight=False, color_system=color_system, force_terminal=force_terminal
+    )
+
+
+def render_table(
+    value: Any, *, title: str | None = None, no_color: bool = False
+) -> str:
     """Render a conservative Rich table, falling back to JSON.
 
     A table is only a *view*: we identify a primary array field (items,
     inventoryItems, orders, members, ...) and project scalar fields. Anything we
     cannot sensibly tabulate is emitted as pretty JSON so no field is lost.
+    ``no_color`` forwards the global ``--no-color`` flag to the shared console
+    so the captured table carries no ANSI escapes when the flag is set.
     """
     try:
-        from rich.console import Console
         from rich.table import Table
     except ImportError:  # pragma: no cover - rich is a hard dep
         return _json_fallback(value)
@@ -169,7 +204,7 @@ def render_table(value: Any, *, title: str | None = None) -> str:
         table.add_column(column, overflow="fold")
     for row in rows:
         table.add_row(*[_render_cell(row.get(col)) for col in columns])
-    console = Console(force_terminal=_force_terminal(), highlight=False)
+    console = make_table_console(no_color=no_color, force_terminal=_force_terminal())
     with console.capture() as capture:
         console.print(table)
     return capture.get().rstrip("\n")
@@ -193,16 +228,20 @@ _PRIMARY_ARRAY_FIELDS = (
 
 def _extract_rows(data: Any) -> tuple[list[dict[str, Any]] | None, list[str]]:
     if isinstance(data, list):
-        if not data or all(isinstance(item, dict) for item in data):
-            return list(data), _columns(list(data))
+        # Narrow element-by-element via the comprehension so the result is
+        # honestly ``list[dict[...]]``; a mixed list rejects entirely because
+        # its filtered length no longer matches the input length.
+        rows = [item for item in data if isinstance(item, dict)]
+        if not data or len(rows) == len(data):
+            return rows, _columns(rows)
         return None, []
     if isinstance(data, dict):
         for field in _PRIMARY_ARRAY_FIELDS:
             candidate = data.get(field)
-            if isinstance(candidate, list) and all(
-                isinstance(item, dict) for item in candidate
-            ):
-                return list(candidate), _columns(candidate)
+            if isinstance(candidate, list):
+                rows = [item for item in candidate if isinstance(item, dict)]
+                if len(rows) == len(candidate):
+                    return rows, _columns(rows)
     return None, []
 
 

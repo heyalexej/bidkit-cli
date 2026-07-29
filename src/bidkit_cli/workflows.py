@@ -846,7 +846,11 @@ def _assert_browse_fields(
         count = _browse_image_count(item)
         add("image_count", expect_image_count, count, match=count == expect_image_count)
     if expect_price is not None or expect_currency is not None:
-        price = item.get("price") if isinstance(item.get("price"), dict) else {}
+        # Hoist the lookup once so the isinstance check narrows the value used
+        # downstream; a non-dict/missing price falls back to an empty dict and
+        # the field assertions report the resulting None values.
+        raw_price = item.get("price")
+        price = raw_price if isinstance(raw_price, dict) else {}
         if expect_price is not None:
             value = price.get("value")
             add("price.value", expect_price, value, match=str(value) == str(expect_price))

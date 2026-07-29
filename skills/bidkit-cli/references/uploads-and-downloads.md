@@ -21,14 +21,14 @@ bidkit api schema sell_inventory.createOrReplaceInventoryItem request
 ## Multipart uploads
 
 ```bash
-bidkit commerce media create-image-from-file --file image=@photo.jpg --allow-write-expert
+bidkit commerce media create-image-from-file --file image=@photo.jpg --allow-write
 
 bidkit commerce media upload-post-order-document \
   --file file=@evidence.pdf \
   --field documentUsageType=RETURN \
   --field entityType=RETURN \
   --field entityId=R-0-1-2 \
-  --allow-write-expert
+  --allow-write-expert --yes
 ```
 
 `--file NAME=@PATH` and `--field NAME=VALUE` are repeatable. Required file fields are enforced
@@ -37,7 +37,7 @@ before dispatch. File bytes are never base64-encoded unless the OAS requires it.
 ## Binary request bodies
 
 ```bash
-bidkit commerce media upload-video --body-file video.mp4 --allow-write-expert
+bidkit commerce media upload-video --body-file video.mp4 --allow-write-expert --yes
 ```
 
 The file is streamed/read per the SDK adapter; it is **never** parsed as UTF-8.

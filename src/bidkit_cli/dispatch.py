@@ -785,7 +785,17 @@ def _stream_to_file(
     ``stream_<method>`` or ``resource._stream``) so the generic and fast paths
     share identical output behavior.
     """
-    target = Path(context.output_file).expanduser()
+    # ``_stream_to_file`` is only reached when ``--output-file`` is set (the
+    # streaming decision in ``_choose_path`` is gated on it), so a missing path
+    # here is an invariant violation — surface it as a structured error rather
+    # than letting ``Path(None)`` raise an unstructured TypeError.
+    output_file = context.output_file
+    if output_file is None:
+        raise UsageError(
+            "--output-file is required to stream a binary response",
+            operation=operation.key,
+        )
+    target = Path(output_file).expanduser()
     if target.exists() and not context.force:
         raise IoError(f"refusing to overwrite {target}; pass --force to allow")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -902,7 +912,9 @@ def _render_result(context: CliContext, operation: OperationRecord, result: Any)
 
         from .rendering import render_table
 
-        sys.stdout.write(render_table(payload, title=operation.key) + "\n")
+        sys.stdout.write(
+            render_table(payload, title=operation.key, no_color=context.no_color) + "\n"
+        )
     elif fmt == "text" and isinstance(payload, str):
         import sys
 

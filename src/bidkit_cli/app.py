@@ -48,25 +48,57 @@ def _parse_test_provenance(raw: str | None) -> dict[str, str] | None:
         raise CliError("--test-provenance must be a JSON object mapping field -> source sku.")
     return {str(k): str(v) for k, v in parsed.items() if v}
 
-# Global options (spec §8) that may appear anywhere on the command line, including
+# Global options (spec §8) may appear anywhere on the command line, including
 # after the command path (e.g. `bidkit sell inventory ... --dry-run`). Click only
 # parses group-level options before the subcommand, so main() reorders these
 # tokens to the front before invoking Click. Help flags stay in place so each
 # command's own --help still wins.
-_GLOBAL_VALUE_OPTIONS = {
-    "--config", "--environment", "--marketplace", "--format", "--output-file",
-    "--timeout", "--max-retries", "--log-level", "--select",
-    "--content-language", "--wait-for-live",
-    "--test-marker", "--test-run-id", "--test-provenance", "--ledger-dir",
-    "--sessions-dir", "--session-id",
-}
-_GLOBAL_FLAG_OPTIONS = {
-    "--trace", "--no-color", "--allow-write", "--allow-write-expert",
-    "--yes", "--dry-run", "--force", "--pretty", "--compact", "--include-meta",
-    "--marketplace-locale", "--merge", "--verify-live",
-    "--test-mode", "--allow-scrambled-test-data", "--allow-untracked-test-run",
-    "--no-session-log",
-}
+#
+# Which tokens count as "global" is derived below from the root command's own
+# @click.option declarations (see _root_option_spellings), so the reorderer and
+# the collision check can never drift from what the root actually accepts. The
+# derived sets (_GLOBAL_VALUE_OPTIONS / _GLOBAL_FLAG_OPTIONS /
+# _ALL_GLOBAL_OPTION_NAMES) are assigned once `cli` exists, before build_cli()
+# imports the generated commands.
+
+
+def _classify_root_option(param: click.Parameter) -> str:
+    """``"flag"`` if the option consumes no following argv token, else ``"value"``.
+
+    A boolean switch such as ``--pretty/--compact`` is a flag on *both* spellings:
+    neither ``--pretty`` nor ``--compact`` steals the next token as its value, so
+    each must be hoisted as a flag (never a value) by the argv reorderer.
+    """
+    if not isinstance(param, click.Option):
+        return "value"
+    if param.is_flag or param.count:
+        return "flag"
+    return "value"
+
+
+def _root_option_spellings(
+    group: click.Group,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Derive ``(value-spellings, flag-spellings)`` from a group's declared options.
+
+    The root ``@click.option`` declarations are the single source of truth for
+    the global option surface, replacing the hand-maintained name sets that
+    drifted from them. Both halves of a boolean switch land in the flag set, so
+    the secondary spelling (``--compact``) is reordered exactly like the primary
+    (``--pretty``) instead of being mistaken for a value option that eats the
+    following token.
+    """
+    value_spellings: set[str] = set()
+    flag_spellings: set[str] = set()
+    for param in group.params:
+        if not isinstance(param, click.Option):
+            continue
+        spellings = (*param.opts, *param.secondary_opts)
+        if _classify_root_option(param) == "flag":
+            flag_spellings.update(spellings)
+        else:
+            value_spellings.update(spellings)
+    return frozenset(value_spellings), frozenset(flag_spellings)
 
 
 def _reorder_global_options(argv: list[str]) -> list[str]:
@@ -110,11 +142,6 @@ def _reorder_global_options(argv: list[str]) -> list[str]:
         rest.append(token)
         i += 1
     return [*globals_, *rest]
-
-
-# Every global option name (value + flag). Used by the build-time collision
-# check so a leaf command can never silently redeclare one.
-_ALL_GLOBAL_OPTION_NAMES = _GLOBAL_VALUE_OPTIONS | _GLOBAL_FLAG_OPTIONS
 
 
 def _requested_json_mode(argv: list[str]) -> bool:
@@ -175,8 +202,16 @@ class GlobalOptionGroup(click.Group):
     invoked via the console script or via :class:`click.testing.CliRunner`.
     """
 
-    def make_context(self, info_name, args, **extra):  # type: ignore[override]
-        return super().make_context(info_name, _reorder_global_options(list(args)), **extra)
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: click.Context | None = None,
+        **extra: Any,
+    ) -> click.Context:
+        return super().make_context(
+            info_name, _reorder_global_options(list(args)), parent=parent, **extra
+        )
 
 
 def _global_options(func):
@@ -194,9 +229,10 @@ def _global_options(func):
                      help="Pretty-print JSON (default) or emit compact JSON."),
         click.option("--output-file", "output_file", type=click.Path(), default=None,
                      help="Save response body / binary output to a file."),
-        click.option("--timeout", type=float, default=None,
+        click.option("--timeout", type=click.FloatRange(min=0), default=None,
                      help="Per-request timeout in seconds."),
-        click.option("--max-retries", type=int, default=None, help="Retry override."),
+        click.option("--max-retries", type=click.IntRange(min=0), default=None,
+                     help="Retry override."),
         click.option("--log-level", type=click.Choice(LOG_LEVELS), default="warning"),
         click.option("--trace", is_flag=True, default=False,
                      help="Enable verbose transport diagnostics."),
@@ -223,7 +259,8 @@ def _global_options(func):
                      help="Read-merge-write a replace-like PUT (updateOffer/createOrReplace)."),
         click.option("--verify-live", "verify_live", is_flag=True, default=False,
                      help="After a write, poll the API readback and report convergence."),
-        click.option("--wait-for-live", "wait_for_live", type=float, default=0.0,
+        click.option("--wait-for-live", "wait_for_live", type=click.FloatRange(min=0),
+                     default=0.0,
                      help="Seconds to wait for API readback during --verify-live."),
         # test-mode safety gate. Opt-in; only acts on the
         # description-carrying inventory/offer write ops.
@@ -328,6 +365,16 @@ def cli(ctx: click.Context, **kwargs: Any) -> None:
     logging.getLogger("bidkit").setLevel(level)
     if context.trace:
         logging.getLogger("bidkit.transport").setLevel(logging.DEBUG)
+
+
+# Derive the global option surface from the root command's own declarations —
+# the 33 @click.option calls above — so value/flag spellings (including the
+# secondary ``--compact``) have one source of truth instead of a parallel,
+# hand-maintained name set. This runs after `cli` exists and before build_cli()
+# imports the generated commands, which consult _ALL_GLOBAL_OPTION_NAMES when
+# renaming collision-prone query/header options.
+_GLOBAL_VALUE_OPTIONS, _GLOBAL_FLAG_OPTIONS = _root_option_spellings(cli)
+_ALL_GLOBAL_OPTION_NAMES = _GLOBAL_VALUE_OPTIONS | _GLOBAL_FLAG_OPTIONS
 
 
 def build_cli() -> click.Group:

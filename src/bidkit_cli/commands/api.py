@@ -15,6 +15,13 @@ from ..errors import UsageError
 from ..manifest import AmbiguousOperation, Manifest, OperationRecord
 from ..rendering import emit_json
 from .generated import run_operation
+from .options import (
+    make_all_body_options,
+    make_allow_unknown_params_option,
+    make_header_option,
+    make_path_option,
+    make_query_option,
+)
 
 DESC_KINDS = {"describe", "schema"}
 
@@ -75,7 +82,7 @@ def api_list(
         }
         emit_json(payload, pretty=context.pretty)
     else:
-        _print_operation_table(operations)
+        _print_operation_table(operations, no_color=context.no_color)
 
 
 @api_group.command("search")
@@ -110,7 +117,7 @@ def api_search(
             pretty=context.pretty,
         )
     else:
-        _print_operation_table(operations)
+        _print_operation_table(operations, no_color=context.no_color)
 
 
 @api_group.command("describe")
@@ -182,18 +189,29 @@ def api_schema(
     emit_json(schema, pretty=context.pretty)
 
 
-@api_group.command("call")
-@click.argument("service", required=True)
-@click.argument("operation", required=False)
-@click.option("--query", "universal_query", multiple=True, help="NAME=VALUE (repeatable).")
-@click.option("--header", "universal_header", multiple=True, help="NAME=VALUE (repeatable).")
-@click.option("--path", "universal_path", multiple=True, help="NAME=VALUE (repeatable).")
-@click.option("--body", "body_arg", default=None, help="@file | @- | inline JSON.")
-@click.option("--body-json", default=None, help="Inline JSON request body.")
-@click.option("--body-file", default=None, help="Binary body file path.")
-@click.option("--file", "file_pairs", multiple=True, help="NAME=@PATH (multipart).")
-@click.option("--field", "field_pairs", multiple=True, help="NAME=VALUE (multipart).")
-@click.option("--allow-unknown-params", is_flag=True, default=False)
+def _api_call_params() -> list[click.Parameter]:
+    """The full parameter list for ``api call``, in display order.
+
+    Built from the shared request-option factories in
+    :mod:`bidkit_cli.commands.options` so the universal escape hatches and the
+    body suite are the exact same spec the generated commands draw from — only
+    ``api call`` exposes every body option at once, because it accepts any
+    operation regardless of request kind. Order is part of the contract:
+    ``SERVICE``/``OPERATION`` positionals, then the override options, with
+    ``--allow-unknown-params`` last, matching the historical ``--help`` layout.
+    """
+    return [
+        click.Argument(["service"], required=True),
+        click.Argument(["operation"], required=False),
+        make_query_option(),
+        make_header_option(),
+        make_path_option(),
+        *make_all_body_options(),
+        make_allow_unknown_params_option(),
+    ]
+
+
+@api_group.command("call", params=_api_call_params())
 @click.pass_context
 def api_call(
     ctx: click.Context,
@@ -431,9 +449,10 @@ def _is_replace_like(record: OperationRecord) -> bool:
     return is_replace_like(record)
 
 
-def _print_operation_table(operations: list[OperationRecord]) -> None:
+def _print_operation_table(
+    operations: list[OperationRecord], *, no_color: bool = False
+) -> None:
     try:
-        from rich.console import Console
         from rich.table import Table
     except ImportError:  # pragma: no cover
         for op in operations:
@@ -448,4 +467,6 @@ def _print_operation_table(operations: list[OperationRecord]) -> None:
     for op in operations:
         risk, _ = _effective_pair(op)
         table.add_row(op.http_method, op.key, op.path, risk)
-    Console().print(table)
+    from ..rendering import make_table_console
+
+    make_table_console(no_color=no_color).print(table)

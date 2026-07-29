@@ -118,18 +118,18 @@ def _operation_command(operation: OperationRecord) -> click.Command:
     return _cmd
 
 
-def _universal_options() -> list[click.Parameter]:
-    """The repeatable --query / --header / --path escape hatches."""
-    return [
-        click.Option(["--query", "universal_query"], multiple=True,
-                     help="Query param as NAME=VALUE (repeatable)."),
-        click.Option(["--header", "universal_header"], multiple=True,
-                     help="Header as NAME=VALUE (repeatable)."),
-        click.Option(["--path", "universal_path"], multiple=True,
-                     help="Path param as NAME=VALUE (the universal form)."),
-        click.Option(["--allow-unknown-params"], is_flag=True, default=False,
-                     help="Accept parameters not in the manifest (experimental)."),
-    ]
+def _universal_options() -> list[click.Option]:
+    """The repeatable --query / --header / --path escape hatches + --allow-unknown-params.
+
+    Sourced from the shared spec in :mod:`bidkit_cli.commands.options` so the
+    universal override surface is byte-identical to ``api call`` and never drifts
+    between the two. Each call returns fresh ``Option`` instances; Click options
+    are mutable and bind to one command when parsed, so a shared instance would
+    cross-wire parsing across the 455-operation tree.
+    """
+    from .options import make_universal_options
+
+    return make_universal_options()
 
 
 def _option_name(param: ParameterRecord) -> str:
@@ -182,29 +182,21 @@ def _param_help(param: ParameterRecord) -> str:
     return help_text
 
 
-def _body_params(operation: OperationRecord) -> list[click.Parameter]:
+def _body_params(operation: OperationRecord) -> list[click.Option]:
+    """Body options for this operation's request kind, from the shared spec.
+
+    Delegates to :func:`make_body_options_for_kind` so the per-kind option set
+    (and its help text) is the same source of truth ``api call``'s full body
+    suite is drawn from; only the manifest's request ``kind`` decides which
+    subset a generated command exposes.
+    """
+    from .options import make_body_options_for_kind
+
     kind = operation.request.kind
-    if kind == "json":
-        return [
-            click.Option(["--body", "body_arg"], default=None,
-                         help="Request body: @file.json, @- for stdin, or inline JSON."),
-            click.Option(["--body-json"], default=None, help="Inline JSON request body."),
-        ]
     if kind == "multipart":
         file_fields = [f.name for f in operation.request.fields if f.kind == "file"]
-        return [
-            click.Option(["--file", "file_pairs"], multiple=True,
-                         help="Multipart file as NAME=@PATH (repeatable). "
-                              f"Files: {', '.join(file_fields) or '(none)'}"),
-            click.Option(["--field", "field_pairs"], multiple=True,
-                         help="Multipart text field as NAME=VALUE (repeatable)."),
-        ]
-    if kind == "binary":
-        return [
-            click.Option(["--body-file", "body_file"], default=None,
-                         help="Path to a binary request body file."),
-        ]
-    return []
+        return make_body_options_for_kind(kind, file_fields=file_fields)
+    return make_body_options_for_kind(kind)
 
 
 def run_operation(

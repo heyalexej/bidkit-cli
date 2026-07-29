@@ -26,7 +26,7 @@ bidkit sell fulfillment issue-refund ORDER LINE --body @refund.json --dry-run
 
 ```bash
 bidkit sell fulfillment issue-refund ORDER LINE \
-  --body @refund.json --allow-write-expert --format json
+  --body @refund.json --allow-write-expert --yes --format json
 ```
 
 Post-order refund equivalents (`return.issueReturnRefund`, `case.issueCaseRefund`,
