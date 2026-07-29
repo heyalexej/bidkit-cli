@@ -437,3 +437,52 @@ def test_public_poll_options_factory_is_fresh_per_application() -> None:
     }
     for name in ("--wait", "--poll"):
         assert first_opts[name] is not second_opts[name]
+
+
+# ---------------------------------------------------------------------------
+# Root numeric option ranges: --timeout / --max-retries / --wait-for-live
+#
+# These global options used to accept any float/int, so a typo like
+# ``--timeout -1`` silently produced a nonsensical config (or a late internal
+# error). They now declare a non-negative Click Range, so a negative value is a
+# usage error at parse time (exit 2) while zero stays valid.
+# ---------------------------------------------------------------------------
+
+ROOT_NUMERIC_OPTIONS = ("--timeout", "--max-retries", "--wait-for-live")
+
+
+def test_root_numeric_options_declare_non_negative_ranges() -> None:
+    """Each bounded root option declares a Click Range with min=0 (zero valid)."""
+    by_opt = {p.opts[0]: p for p in cli.params if isinstance(p, click.Option)}
+    timeout = by_opt["--timeout"]
+    max_retries = by_opt["--max-retries"]
+    wait_for_live = by_opt["--wait-for-live"]
+    assert isinstance(timeout.type, click.FloatRange)
+    assert timeout.type.min == 0
+    assert timeout.type.min_open is False  # 0 stays valid
+    assert isinstance(max_retries.type, click.IntRange)
+    assert max_retries.type.min == 0
+    assert max_retries.type.min_open is False
+    assert isinstance(wait_for_live.type, click.FloatRange)
+    assert wait_for_live.type.min == 0
+    assert wait_for_live.type.min_open is False
+
+
+@pytest.mark.parametrize("flag", ROOT_NUMERIC_OPTIONS)
+def test_root_numeric_option_rejects_negative(runner: CliRunner, flag: str) -> None:
+    """A negative value is a Click usage error (exit 2), not a silent bad value."""
+    result = runner.invoke(
+        cli, ["api", "describe", DESCRIBE_OP, "--format", "json", flag, "-1"]
+    )
+    assert result.exit_code == 2, result.output
+    assert flag in result.output
+
+
+@pytest.mark.parametrize("flag", ROOT_NUMERIC_OPTIONS)
+def test_root_numeric_option_accepts_zero(runner: CliRunner, flag: str) -> None:
+    """Zero stays valid for every bounded root numeric option."""
+    result = runner.invoke(
+        cli, ["api", "describe", DESCRIBE_OP, "--format", "json", flag, "0"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["key"] == DESCRIBE_OP

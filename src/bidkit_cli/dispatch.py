@@ -912,7 +912,9 @@ def _render_result(context: CliContext, operation: OperationRecord, result: Any)
 
         from .rendering import render_table
 
-        sys.stdout.write(render_table(payload, title=operation.key) + "\n")
+        sys.stdout.write(
+            render_table(payload, title=operation.key, no_color=context.no_color) + "\n"
+        )
     elif fmt == "text" and isinstance(payload, str):
         import sys
 

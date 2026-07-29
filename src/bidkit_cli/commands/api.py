@@ -82,7 +82,7 @@ def api_list(
         }
         emit_json(payload, pretty=context.pretty)
     else:
-        _print_operation_table(operations)
+        _print_operation_table(operations, no_color=context.no_color)
 
 
 @api_group.command("search")
@@ -117,7 +117,7 @@ def api_search(
             pretty=context.pretty,
         )
     else:
-        _print_operation_table(operations)
+        _print_operation_table(operations, no_color=context.no_color)
 
 
 @api_group.command("describe")
@@ -449,9 +449,10 @@ def _is_replace_like(record: OperationRecord) -> bool:
     return is_replace_like(record)
 
 
-def _print_operation_table(operations: list[OperationRecord]) -> None:
+def _print_operation_table(
+    operations: list[OperationRecord], *, no_color: bool = False
+) -> None:
     try:
-        from rich.console import Console
         from rich.table import Table
     except ImportError:  # pragma: no cover
         for op in operations:
@@ -466,4 +467,6 @@ def _print_operation_table(operations: list[OperationRecord]) -> None:
     for op in operations:
         risk, _ = _effective_pair(op)
         table.add_row(op.http_method, op.key, op.path, risk)
-    Console().print(table)
+    from ..rendering import make_table_console
+
+    make_table_console(no_color=no_color).print(table)

@@ -101,6 +101,7 @@ def session_list(context: CliContext, since: int | None, limit: int | None) -> N
           r["environment"] or "", r["marketplace"] or "",
           ",".join(str(c) for c in r["exit_codes"])] for r in rows],
         title=f"{len(rows)} session(s)",
+        no_color=context.no_color,
     ))
 
 
@@ -130,7 +131,9 @@ def session_show(context: CliContext, session: str, ops_only: bool) -> None:
         "records": [r.data for r in records],
         "parse_errors": errors,
     }
-    _emit(context, payload, lambda: _print_records(records, errors))
+    _emit(context, payload, lambda: _print_records(
+        records, errors, no_color=context.no_color,
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +177,7 @@ def session_grep(context: CliContext, pattern: str, since: int | None) -> None:
         ["SESSION", "SEQ", "TYPE", "MATCH"],
         [[mm["session_id"], mm["seq"], mm["type"], mm["match"]] for mm in matches],
         title=f"{len(matches)} match(es)",
+        no_color=context.no_color,
     ))
 
 
@@ -381,8 +385,11 @@ def session_prune(
 @click.option("--seq", "only_seq", type=click.IntRange(min=1), default=None,
               help="Only revert the operation recorded at this seq number (>= 1).")
 @click.option("--execute", is_flag=True, default=False,
-              help="Execute the plan. Default is a dry-run preview. Executing "
-                   "requires the global --allow-write and --yes.")
+              help="Execute the plan (default: a dry-run preview). Executing "
+                   "requires the global --allow-write and --yes. The global "
+                   "--dry-run overrides --execute: when both are set the plan "
+                   "is previewed, nothing is dispatched, and the write/yes "
+                   "gates are not required.")
 @click.pass_obj
 def session_revert(
     context: CliContext,
@@ -399,10 +406,21 @@ def session_revert(
     declaring it here is a build-time collision. Execution dispatches REAL
     compensating operations, so it additionally requires ``--allow-write`` and
     ``--yes``; blocked/irreversible steps are ALWAYS printed, never skipped.
+
+    Precedence: the global ``--dry-run`` wins over ``--execute``. When both are
+    set the command previews the plan (``executed: false`` with empty
+    ``results``) without enforcing the write/yes gates or dispatching anything,
+    so a cautious ``--dry-run --execute`` can never accidentally run
+    compensating operations or report a misleading "ok" execution.
     """
-    # Refuse before importing/planning: the refusal must not depend on the
-    # session_revert module being importable, and the gates are cheap to check.
-    if execute:
+    # The global --dry-run is the safer flag, so it takes precedence over the
+    # local --execute: combined, the plan is previewed rather than run, the
+    # write/yes gates a real execution needs are not enforced, and execute_plan
+    # is never called. An agent surveying a session with --dry-run --execute
+    # must never see a misleading "ok" execution result.
+    effective_execute = execute and not context.dry_run
+
+    if effective_execute:
         # The group disabled logging for inspection; an executing revert is a
         # real mutation and must leave its own trail (carrying `compensates`
         # back to the ops it undoes). Set before the recorder is first built.
@@ -426,9 +444,9 @@ def session_revert(
 
     plan = build_plan(path, only_last=last_n, only_seq=only_seq)
     results: list[dict[str, Any]] = []
-    if execute:
+    if effective_execute:
         results = execute_plan(context, plan)
-    payload = _plan_payload(plan, executed=execute, results=results)
+    payload = _plan_payload(plan, executed=effective_execute, results=results)
     _emit(context, payload, lambda: _print_plan(payload))
 
 
@@ -811,28 +829,35 @@ def _emit(
 
 def _print_table(
     columns: list[str], rows: list[list[Any]], *, title: str | None,
+    no_color: bool = False,
 ) -> None:
     try:
-        from rich.console import Console
         from rich.table import Table
     except ImportError:  # pragma: no cover - rich is a hard dependency
         for row in rows:
             click.echo("\t".join("" if c is None else str(c) for c in row))
         return
+    from ..rendering import make_table_console
+
     table = Table(title=title, show_lines=False, header_style="bold")
     for column in columns:
         table.add_column(column, overflow="fold")
     for row in rows:
         table.add_row(*["" if c is None else str(c) for c in row])
-    Console(highlight=False).print(table)
+    make_table_console(no_color=no_color).print(table)
 
 
-def _print_records(records: list[_SessionRecord], errors: list[str]) -> None:
+def _print_records(
+    records: list[_SessionRecord], errors: list[str], *, no_color: bool = False,
+) -> None:
     rows = [
         [r.data.get("seq"), r.data.get("type"), _record_label(r.data)]
         for r in records
     ]
-    _print_table(["SEQ", "TYPE", "DETAIL"], rows, title=f"{len(rows)} record(s)")
+    _print_table(
+        ["SEQ", "TYPE", "DETAIL"], rows,
+        title=f"{len(rows)} record(s)", no_color=no_color,
+    )
     for err in errors:
         click.echo(f"warn: {err}", err=True)
 

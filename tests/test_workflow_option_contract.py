@@ -128,6 +128,47 @@ def test_verify_public_help_orders_wait_before_poll(runner: CliRunner) -> None:
     assert out.index("--wait") < out.index("--poll")
 
 
+def test_verify_public_expect_image_count_declares_non_negative_range() -> None:
+    """--expect-image-count declares an IntRange with min=0 (zero valid)."""
+    import click
+
+    cli = _cli()
+    cmd = cli.commands["sell"].commands["inventory"].commands["verify-public"]
+    opt = next(
+        p for p in cmd.params
+        if isinstance(p, click.Option) and "--expect-image-count" in p.opts
+    )
+    assert isinstance(opt.type, click.IntRange)
+    assert opt.type.min == 0
+    assert opt.type.min_open is False  # 0 (an assertion, not a count) stays valid
+
+
+def test_verify_public_expect_image_count_negative_rejected(
+    runner: CliRunner,
+) -> None:
+    """A negative --expect-image-count is a Click usage error (exit 2)."""
+    cli = _cli()
+    r = runner.invoke(cli, [
+        "sell", "inventory", "verify-public", "--listing-id", "1",
+        "--expect-image-count", "-1", "--dry-run",
+    ])
+    assert r.exit_code == 2, r.output
+    assert "--expect-image-count" in r.output
+
+
+def test_verify_public_expect_image_count_zero_accepted(
+    runner: CliRunner,
+) -> None:
+    """Zero stays valid and surfaces as an assertion in the preview."""
+    cli = _cli()
+    r = runner.invoke(cli, [
+        "sell", "inventory", "verify-public", "--listing-id", "1",
+        "--expect-image-count", "0", "--dry-run", "--format", "json",
+    ])
+    assert r.exit_code == 0, r.output
+    assert "expect_image_count" in json.loads(r.output)["assertions"]
+
+
 def test_cleanup_report_exposes_poll_options(runner: CliRunner) -> None:
     """cleanup-report shares the same --wait/--poll surface and range contract."""
     cli = _cli()

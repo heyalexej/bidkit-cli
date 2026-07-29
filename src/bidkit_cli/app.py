@@ -229,9 +229,10 @@ def _global_options(func):
                      help="Pretty-print JSON (default) or emit compact JSON."),
         click.option("--output-file", "output_file", type=click.Path(), default=None,
                      help="Save response body / binary output to a file."),
-        click.option("--timeout", type=float, default=None,
+        click.option("--timeout", type=click.FloatRange(min=0), default=None,
                      help="Per-request timeout in seconds."),
-        click.option("--max-retries", type=int, default=None, help="Retry override."),
+        click.option("--max-retries", type=click.IntRange(min=0), default=None,
+                     help="Retry override."),
         click.option("--log-level", type=click.Choice(LOG_LEVELS), default="warning"),
         click.option("--trace", is_flag=True, default=False,
                      help="Enable verbose transport diagnostics."),
@@ -258,7 +259,8 @@ def _global_options(func):
                      help="Read-merge-write a replace-like PUT (updateOffer/createOrReplace)."),
         click.option("--verify-live", "verify_live", is_flag=True, default=False,
                      help="After a write, poll the API readback and report convergence."),
-        click.option("--wait-for-live", "wait_for_live", type=float, default=0.0,
+        click.option("--wait-for-live", "wait_for_live", type=click.FloatRange(min=0),
+                     default=0.0,
                      help="Seconds to wait for API readback during --verify-live."),
         # test-mode safety gate. Opt-in; only acts on the
         # description-carrying inventory/offer write ops.

@@ -94,7 +94,7 @@ def _verify_public_command() -> click.Command:
     @click.option("--expect-title", default=None, help="Assert the public title matches exactly.")
     @click.option("--expect-description-contains", default=None,
                   help="Assert the public description contains this marker (e.g. 'TEST ONLY').")
-    @click.option("--expect-image-count", type=int, default=None,
+    @click.option("--expect-image-count", type=click.IntRange(min=0), default=None,
                   help="Assert the public image count (primary + additional).")
     @click.option("--expect-price", default=None,
                   help="Assert the public price value (e.g. 12.50).")
