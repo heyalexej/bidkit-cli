@@ -61,7 +61,7 @@ def preflight_test_mode(
     test_mode: bool,
     provenance: dict[str, str] | None,
     allow_scrambled: bool,
-    marker: str,
+    marker: str | None = None,
     run_id: str | None,
     allow_untracked_run: bool = False,
 ) -> list[str]:

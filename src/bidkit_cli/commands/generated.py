@@ -118,7 +118,7 @@ def _operation_command(operation: OperationRecord) -> click.Command:
     return _cmd
 
 
-def _universal_options() -> list[click.Parameter]:
+def _universal_options() -> list[click.Option]:
     """The repeatable --query / --header / --path escape hatches + --allow-unknown-params.
 
     Sourced from the shared spec in :mod:`bidkit_cli.commands.options` so the
@@ -182,7 +182,7 @@ def _param_help(param: ParameterRecord) -> str:
     return help_text
 
 
-def _body_params(operation: OperationRecord) -> list[click.Parameter]:
+def _body_params(operation: OperationRecord) -> list[click.Option]:
     """Body options for this operation's request kind, from the shared spec.
 
     Delegates to :func:`make_body_options_for_kind` so the per-kind option set

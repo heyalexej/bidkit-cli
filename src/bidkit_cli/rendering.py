@@ -193,16 +193,20 @@ _PRIMARY_ARRAY_FIELDS = (
 
 def _extract_rows(data: Any) -> tuple[list[dict[str, Any]] | None, list[str]]:
     if isinstance(data, list):
-        if not data or all(isinstance(item, dict) for item in data):
-            return list(data), _columns(list(data))
+        # Narrow element-by-element via the comprehension so the result is
+        # honestly ``list[dict[...]]``; a mixed list rejects entirely because
+        # its filtered length no longer matches the input length.
+        rows = [item for item in data if isinstance(item, dict)]
+        if not data or len(rows) == len(data):
+            return rows, _columns(rows)
         return None, []
     if isinstance(data, dict):
         for field in _PRIMARY_ARRAY_FIELDS:
             candidate = data.get(field)
-            if isinstance(candidate, list) and all(
-                isinstance(item, dict) for item in candidate
-            ):
-                return list(candidate), _columns(candidate)
+            if isinstance(candidate, list):
+                rows = [item for item in candidate if isinstance(item, dict)]
+                if len(rows) == len(candidate):
+                    return rows, _columns(rows)
     return None, []
 
 

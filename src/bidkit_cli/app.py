@@ -202,8 +202,16 @@ class GlobalOptionGroup(click.Group):
     invoked via the console script or via :class:`click.testing.CliRunner`.
     """
 
-    def make_context(self, info_name, args, **extra):  # type: ignore[override]
-        return super().make_context(info_name, _reorder_global_options(list(args)), **extra)
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: click.Context | None = None,
+        **extra: Any,
+    ) -> click.Context:
+        return super().make_context(
+            info_name, _reorder_global_options(list(args)), parent=parent, **extra
+        )
 
 
 def _global_options(func):
