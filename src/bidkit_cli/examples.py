@@ -373,7 +373,7 @@ CURATED_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         {
             "command": (
                 "bidkit commerce media create-image-from-file "
-                "--file image=@./photo.JPG --allow-write-expert --yes --format json"
+                "--file image=@./photo.JPG --allow-write --format json"
             ),
             "safe": False,
             "illustrative": True,

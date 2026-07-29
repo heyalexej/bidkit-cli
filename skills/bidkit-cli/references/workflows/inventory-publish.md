@@ -114,7 +114,7 @@ bidkit commerce taxonomy get-item-aspects-for-category CATEGORY-TREE-ID \
 
 - `sell_inventory.createOrReplaceInventoryItem`
 - `sell_inventory.createOffer`
-- `sell_inventory.publishOffer` (use `--allow-write --yes` if it deletes prior state)
+- `sell_inventory.publishOffer` (a normal write: use `--allow-write`)
 - `sell_inventory.getInventoryItem`, `sell_inventory.getOffers`
 
 Never hide the keys: log them and the returned `x-ebay-c-request-id`.
