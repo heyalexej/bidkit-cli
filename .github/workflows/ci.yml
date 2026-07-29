@@ -1,4 +1,4 @@
-# Source type checks on 3.11, plus tests + lint across the supported Python range.
+# Type checks on 3.11, plus tests + lint across the supported Python range.
 name: ci
 
 on:
@@ -23,7 +23,7 @@ jobs:
       # only; the other matrix versions still run tests and lint below.
       - name: Type check (ty)
         if: matrix.python-version == '3.11'
-        run: uv run ty check src
+        run: uv run ty check src tests
       - name: Tests
         run: uv run pytest -q
       - name: Lint
