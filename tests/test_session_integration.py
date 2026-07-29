@@ -13,6 +13,7 @@ import io
 import json
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import TypeGuard
 
 import httpx2
 import orjson
@@ -35,6 +36,14 @@ def _session_files(base: Path) -> list[Path]:
 
 def _records(path: Path) -> list[dict[str, object]]:
     return [orjson.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _is_record(value: object) -> TypeGuard[dict[str, object]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    return isinstance(value, list)
 
 
 def _ctx_with_session(
@@ -121,6 +130,7 @@ def test_dispatched_read_writes_op_with_attempts(
 
     ctx = _ctx_with_session(manifest, handler, tmp_path)
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     _run(ctx, op, path_params={"sku": "A"}, query_params={}, header_params={},
          body=None, files={})
 
@@ -134,11 +144,18 @@ def test_dispatched_read_writes_op_with_attempts(
     op_rec = next(r for r in records if r["type"] == "op")
     assert op_rec["operation_id"] == op.key
     # The collector observed the single mock attempt.
-    assert isinstance(op_rec["http"]["attempts"], list)
-    assert len(op_rec["http"]["attempts"]) == 1
-    assert op_rec["http"]["attempts"][0]["status"] == 200
-    assert op_rec["http"]["status"] == 200
-    assert op_rec["ebay"]["request_id"] == "req-1"
+    http = op_rec["http"]
+    assert _is_record(http)
+    attempts = http["attempts"]
+    assert _is_object_list(attempts)
+    assert len(attempts) == 1
+    first_attempt = attempts[0]
+    assert _is_record(first_attempt)
+    assert first_attempt["status"] == 200
+    assert http["status"] == 200
+    ebay = op_rec["ebay"]
+    assert _is_record(ebay)
+    assert ebay["request_id"] == "req-1"
     ctx.close()
 
 
@@ -166,7 +183,9 @@ def test_dispatched_write_records_reverse_hint(
         "args": {"sku": "SKU-X"},
     }
     assert op_rec["irreversible"] is False
-    assert op_rec["ids"]["sku"] == "SKU-X"
+    ids = op_rec["ids"]
+    assert _is_record(ids)
+    assert ids["sku"] == "SKU-X"
     ctx.close()
 
 
@@ -205,6 +224,7 @@ def test_failing_dispatch_writes_error_record(
 
     ctx = _ctx_with_session(manifest, handler, tmp_path)
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     with pytest.raises(ApiError):
         _run(ctx, op, path_params={"sku": "A"}, query_params={}, header_params={},
              body=None, files={})
@@ -214,7 +234,9 @@ def test_failing_dispatch_writes_error_record(
     assert err_rec["operation_id"] == op.key
     assert err_rec["status"] == 422
     assert err_rec["request_id"] == "req-9"
-    assert isinstance(err_rec["http"]["attempts"], list)
+    http = err_rec["http"]
+    assert _is_record(http)
+    assert _is_object_list(http["attempts"])
     ctx.close()
 
 

@@ -147,6 +147,7 @@ def test_f2_publish_records_offerid_wire_name(manifest: Manifest, tmp_path: Path
     save_ledger(ledger, base_dir=tmp_path)
 
     op = manifest.get("sell_inventory.publishOffer")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"listingId": "L1"})
@@ -170,6 +171,7 @@ def test_f2_createoffer_records_sku_from_body(manifest: Manifest, tmp_path: Path
     save_ledger(ledger, base_dir=tmp_path)
 
     op = manifest.get("sell_inventory.createOffer")
+    assert op is not None
     body = {"sku": "SKU-FROM-BODY", "listingDescription": "TEST ONLY — x"}
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -296,6 +298,7 @@ def test_f4_lifecycle_posts_are_write(manifest: Manifest, key: str) -> None:
     from bidkit_cli.safety import effective_risk
 
     op = manifest.get(key)
+    assert op is not None
     risk, _ = effective_risk(op)
     assert risk == "write", f"{key} should be classified write, got {risk}"
 
@@ -365,6 +368,7 @@ def test_f5_collision_check_forbids_local_global_option() -> None:
 def test_f5_generated_query_format_disambiguated(manifest: Manifest) -> None:
     """get-offers' `format` query param is exposed as --q-format, not stolen by global --format."""
     op = manifest.get("sell_inventory.getOffers")
+    assert op is not None
     # The generated command must not declare --format (it would collide).
     from bidkit_cli.commands.generated import _option_name
 
@@ -453,6 +457,7 @@ def test_f8_html_upstream_error_bounds_details(manifest: Manifest) -> None:
     from bidkit_cli.dispatch import _classified_api_error
 
     op = manifest.get("buy_browse.getItem")
+    assert op is not None
     html = "<html>" + ("x" * 5000) + "</html>"
     response = httpx2.Response(500, content=html.encode(),
                               headers={"content-type": "text/html"})

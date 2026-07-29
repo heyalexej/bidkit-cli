@@ -49,7 +49,10 @@ def _run(ctx, op, **call) -> str:
 def test_f2_injects_accept_for_binary_feed_download(manifest: Manifest) -> None:
     """Feed file ops have no Accept param; the CLI must inject octet-stream."""
     op = manifest.get("sell_feed.getInputFile")
-    assert op.success_response.kind == "bytes"
+    assert op is not None
+    success = op.success_response
+    assert success is not None
+    assert success.kind == "bytes"
 
     ctx = _ctx(manifest, lambda req: httpx2.Response(200, content=b"\0PNG"))
     ctx.dry_run = True
@@ -134,6 +137,7 @@ def test_f4_dry_run_rejects_invalid_model_body(manifest: Manifest) -> None:
     ctx = _ctx(manifest, handler)
     ctx.dry_run = True
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     with pytest.raises(ValidationError_):
         execute(
             ctx, op, path_params={"sku": "X"}, query_params={},
@@ -146,6 +150,7 @@ def test_f4_dry_run_rejects_missing_required_binary(manifest: Manifest) -> None:
     ctx = _ctx(manifest, lambda req: httpx2.Response(200))
     ctx.dry_run = True
     op = manifest.get("commerce_media.uploadVideo")
+    assert op is not None
     with pytest.raises(UsageError):
         execute(ctx, op, path_params={}, query_params={}, header_params={}, body=None, files={})
 
@@ -154,6 +159,7 @@ def test_f4_dry_run_rejects_missing_required_multipart_file(manifest: Manifest) 
     ctx = _ctx(manifest, lambda req: httpx2.Response(200))
     ctx.dry_run = True
     op = manifest.get("commerce_media.createImageFromFile")
+    assert op is not None
     with pytest.raises(UsageError):
         execute(ctx, op, path_params={}, query_params={}, header_params={}, body=None, files={})
 
@@ -166,6 +172,7 @@ def test_f3_override_table_has_no_stale_or_redundant_entries(manifest: Manifest)
 
 def test_f3_find_listing_recommendations_is_read(manifest: Manifest) -> None:
     op = manifest.get("sell_recommendation.findListingRecommendations")
+    assert op is not None
     assert op.risk == "unknown"
     risk, reason = effective_risk(op)
     assert risk == "read"
@@ -174,6 +181,7 @@ def test_f3_find_listing_recommendations_is_read(manifest: Manifest) -> None:
 
 def test_f3_test_subscription_stays_blocked_with_reason(manifest: Manifest) -> None:
     op = manifest.get("commerce_notification.testSubscription")
+    assert op is not None
     risk, reason = effective_risk(op)
     assert risk == "unknown"
     assert reason and "notification" in reason.lower()
@@ -206,7 +214,9 @@ def test_f5_current_install_is_compatible(manifest: Manifest) -> None:
 
 
 def test_f5_mismatched_generation_is_rejected(monkeypatch, manifest: Manifest) -> None:
-    major, minor = manifest_mod._major_minor(manifest.data.sdk_version)
+    sdk_version = manifest.data.sdk_version
+    assert sdk_version is not None
+    major, minor = manifest_mod._major_minor(sdk_version)
     monkeypatch.setattr(
         manifest_mod, "_installed_sdk_version", lambda: f"{major}.{minor + 1}.0"
     )
@@ -215,7 +225,9 @@ def test_f5_mismatched_generation_is_rejected(monkeypatch, manifest: Manifest) -
 
 
 def test_f5_patch_release_is_accepted(monkeypatch, manifest: Manifest) -> None:
-    major, minor = manifest_mod._major_minor(manifest.data.sdk_version)
+    sdk_version = manifest.data.sdk_version
+    assert sdk_version is not None
+    major, minor = manifest_mod._major_minor(sdk_version)
     monkeypatch.setattr(
         manifest_mod, "_installed_sdk_version", lambda: f"{major}.{minor}.9"
     )

@@ -107,6 +107,7 @@ def test_dry_run_never_sends(cli_ctx: CliContext, manifest: Manifest, mock_clien
 
 def test_request_body_validated_against_model(cli_ctx: CliContext, manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     cli_ctx.allow_write = True
     # `product` must be a nested object model; a scalar fails validation.
     with pytest.raises(ValidationError_) as exc_info:

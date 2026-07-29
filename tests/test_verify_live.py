@@ -255,6 +255,7 @@ def test_f3_no_parameters_still_actionable() -> None:
 def test_f3_aspect_names_surface_through_dispatch(manifest: Manifest) -> None:
     """A failing publishOffer surfaces the named aspects in the ApiError hint."""
     op = manifest.get("sell_inventory.publishOffer")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(400, json={"errors": [{

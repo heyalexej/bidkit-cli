@@ -144,8 +144,12 @@ def test_f1_no_global_accept_language_collision(runner: CliRunner) -> None:
 def test_f2_replace_like_ops_known(manifest: Manifest) -> None:
     assert "sell_inventory.updateOffer" in REPLACE_LIKE_OPS
     assert "sell_inventory.createOrReplaceInventoryItem" in REPLACE_LIKE_OPS
-    assert is_replace_like(manifest.get("sell_inventory.updateOffer"))
-    assert not is_replace_like(manifest.get("sell_inventory.getOffer"))
+    update_offer = manifest.get("sell_inventory.updateOffer")
+    assert update_offer is not None
+    assert is_replace_like(update_offer)
+    get_offer = manifest.get("sell_inventory.getOffer")
+    assert get_offer is not None
+    assert not is_replace_like(get_offer)
 
 
 def test_f2_describe_marks_replace_like(runner: CliRunner) -> None:
@@ -165,6 +169,7 @@ def test_f2_help_carries_replace_like_note(runner: CliRunner) -> None:
 def test_f2_merge_preserves_omitted_fields(manifest: Manifest) -> None:
     """--merge GETs current state and preserves omitted fields (listingPolicies/flags)."""
     op = manifest.get("sell_inventory.updateOffer")
+    assert op is not None
     put_body: dict = {}
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -197,6 +202,7 @@ def test_f2_merge_preserves_omitted_fields(manifest: Manifest) -> None:
 def test_f2_merge_over_create_passes_through(manifest: Manifest) -> None:
     """A 404 on the read (the 'create' half) leaves the provided body intact."""
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "GET":
@@ -232,6 +238,7 @@ def test_f2_dry_run_merge_annotation(manifest: Manifest) -> None:
 def test_f2_error_after_mutation_hint(manifest: Manifest) -> None:
     """A failed write carries a non-idempotent-retry hint (state may have changed)."""
     op = manifest.get("sell_inventory.updateOffer")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(400, json={"errors": [{"errorId": 99999, "message": "boom"}]})
@@ -253,6 +260,7 @@ def test_f2_error_after_mutation_hint(manifest: Manifest) -> None:
 def test_f3_verify_live_reports_convergence(manifest: Manifest) -> None:
     """--verify-live polls the readback and reports matched/unmatched fields."""
     op = manifest.get("sell_inventory.updateOffer")
+    assert op is not None
     calls = {"n": 0}
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -287,6 +295,7 @@ def test_f3_verify_live_reports_convergence(manifest: Manifest) -> None:
 
 def test_f3_verify_live_reports_unmatched(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.updateOffer")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         if request.method == "PUT":
@@ -314,6 +323,7 @@ def test_f3_verify_live_reports_unmatched(manifest: Manifest) -> None:
 
 def test_f4_title_over_limit_rejected_before_dispatch(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     ctx = _ctx(manifest, lambda r: httpx2.Response(204), marketplace_id="EBAY_DE")
     long_title = "A" * 81
     with pytest.raises(ValidationError_) as exc:
@@ -326,6 +336,7 @@ def test_f4_title_over_limit_rejected_before_dispatch(manifest: Manifest) -> Non
 
 def test_f4_title_at_limit_passes(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     ctx = _ctx(manifest, lambda r: httpx2.Response(204), marketplace_id="EBAY_DE",
                allow_write=True, yes=True)
     buf = io.StringIO()
@@ -362,6 +373,7 @@ def test_f5_known_publish_errors_get_hints(code: int) -> None:
 
 def test_f5_missing_aspect_hint_names_taxonomy(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.publishOffer")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(400, json={"errors": [{"errorId": 25002}]})
@@ -505,6 +517,7 @@ def test_f7_schema_for_nonexistent_model(runner: CliRunner) -> None:
 
 def test_f8_too_many_images_rejected(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True)
     urls = [f"https://i.ebayimg.com/images/g/{i}.JPG" for i in range(25)]
     with pytest.raises(ValidationError_) as exc:
@@ -517,6 +530,7 @@ def test_f8_too_many_images_rejected(manifest: Manifest) -> None:
 
 def test_f8_twenty_four_images_pass(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
     ctx = _ctx(manifest, lambda r: httpx2.Response(204), allow_write=True, yes=True)
     urls = [f"https://i.ebayimg.com/images/g/{i}.JPG" for i in range(24)]
     buf = io.StringIO()
@@ -529,6 +543,7 @@ def test_f8_twenty_four_images_pass(manifest: Manifest) -> None:
 def test_f8_update_offer_examples_document_merge_and_verify(manifest: Manifest) -> None:
     """The curated updateOffer examples teach the merge/verify workflow."""
     op = manifest.get("sell_inventory.updateOffer")
+    assert op is not None
     commands = " ".join(ex.command for ex in op.examples)
     notes = " ".join(ex.note or "" for ex in op.examples)
     assert "--merge" in commands

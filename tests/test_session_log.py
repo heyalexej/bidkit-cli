@@ -452,15 +452,15 @@ def test_irreversible_reasons() -> None:
     assert irreversible_reason("sell_inventory.bulkPublishOffer") == (
         "bulk publish must be withdrawn per offer"
     )
-    assert irreversible_reason("sell_finances.someMutation").startswith(
-        "a booked fee cannot be reversed"
-    )
-    assert irreversible_reason("commerce_message.sendMessage").startswith(
-        "a sent message cannot be unsent"
-    )
-    assert irreversible_reason("sell_feedback.leaveFeedback").startswith(
-        "left feedback cannot be withdrawn"
-    )
+    reason = irreversible_reason("sell_finances.someMutation")
+    assert reason is not None
+    assert reason.startswith("a booked fee cannot be reversed")
+    reason = irreversible_reason("commerce_message.sendMessage")
+    assert reason is not None
+    assert reason.startswith("a sent message cannot be unsent")
+    reason = irreversible_reason("sell_feedback.leaveFeedback")
+    assert reason is not None
+    assert reason.startswith("left feedback cannot be withdrawn")
     assert irreversible_reason("sell_inventory.getOffer") is None
 
 

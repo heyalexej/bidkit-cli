@@ -37,24 +37,28 @@ def test_parse_bool_rejects_unknown() -> None:
 
 def test_path_params_positional(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     params = collect_path_params(op, positional=["SKU1"], universal=[])
     assert params == {"sku": "SKU1"}
 
 
 def test_path_params_universal(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     params = collect_path_params(op, positional=[], universal=[("sku", "SKU2")])
     assert params == {"sku": "SKU2"}
 
 
 def test_missing_required_path_param(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
     with pytest.raises(UsageError):
         collect_path_params(op, positional=[], universal=[])
 
 
 def test_unknown_query_rejected_unless_allowed(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItems")
+    assert op is not None
     with pytest.raises(UsageError):
         collect_query_params(op, explicit={}, universal=[("bogus", "1")], allow_unknown=False)
     # allowed: no raise
@@ -66,6 +70,7 @@ def test_repeated_value_last_wins(manifest: Manifest) -> None:
     # eBay query params are typed as strings (the transport joins lists with
     # commas); repeated non-array options keep the last value, like most CLIs.
     op = manifest.get("sell_inventory.getInventoryItems")
+    assert op is not None
     out = collect_query_params(
         op, explicit={"limit": ["10", "20"]}, universal=[], allow_unknown=True,
     )
