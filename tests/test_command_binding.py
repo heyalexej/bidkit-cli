@@ -81,6 +81,16 @@ def test_f1_universal_path_satisfies_without_positional(manifest: Manifest) -> N
     assert preview["path_params"] == {"orderId": "FROM_PATH"}
 
 
+def test_f1_api_call_universal_path_satisfies_without_positional(
+    manifest: Manifest,
+) -> None:
+    """The generic `api call` path has no generated positional Click args."""
+    preview = _dry_run([
+        "api", "call", "inquiry.getInquiry", "--path", "inquiryId=FROM_PATH",
+    ])
+    assert preview["path_params"] == {"inquiryId": "FROM_PATH"}
+
+
 def test_f1_multi_path_args_bind_in_order(manifest: Manifest) -> None:
     op = manifest.get("sell_account_v1.getSalesTax")
     assert [p.wire_name for p in op.path_params] == ["countryCode", "jurisdictionId"]

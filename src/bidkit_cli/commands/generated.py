@@ -244,7 +244,8 @@ def run_operation(
     # Path values in declared parameter order (dict iteration is unordered).
     positional: list[str] = []
     for param in operation.path_params:
-        values = provided.pop(dest_by_param[("path", param.wire_name)], None)
+        dest = dest_by_param.get(("path", param.wire_name))
+        values = provided.pop(dest, None) if dest is not None else None
         if values:
             positional.append(values[0])
 
