@@ -96,18 +96,34 @@ def test_binary_response_has_stream_method(manifest: Manifest) -> None:
 
 
 def test_signing_required_flags(manifest: Manifest) -> None:
-    assert manifest.get("sell_fulfillment.issueRefund").signing.required is True
-    assert manifest.get("sell_inventory.getInventoryItems").signing.required is False
+    op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
+    assert op.signing.required is True
+    op = manifest.get("sell_inventory.getInventoryItems")
+    assert op is not None
+    assert op.signing.required is False
 
 
 def test_post_order_uses_token_scheme(manifest: Manifest) -> None:
-    assert manifest.get("return.getReturn").auth.scheme == "TOKEN"
-    assert manifest.get("sell_inventory.getInventoryItems").auth.scheme == "Bearer"
+    op = manifest.get("return.getReturn")
+    assert op is not None
+    assert op.auth.scheme == "TOKEN"
+    op = manifest.get("sell_inventory.getInventoryItems")
+    assert op is not None
+    assert op.auth.scheme == "Bearer"
 
 
 def test_risk_classification(manifest: Manifest) -> None:
-    assert manifest.get("sell_inventory.getInventoryItems").risk == "read"
-    assert manifest.get("sell_inventory.createOrReplaceInventoryItem").risk == "write"
-    assert manifest.get("sell_inventory.deleteInventoryItem").risk == "destructive"
+    op = manifest.get("sell_inventory.getInventoryItems")
+    assert op is not None
+    assert op.risk == "read"
+    op = manifest.get("sell_inventory.createOrReplaceInventoryItem")
+    assert op is not None
+    assert op.risk == "write"
+    op = manifest.get("sell_inventory.deleteInventoryItem")
+    assert op is not None
+    assert op.risk == "destructive"
     # unclassified POST fails closed by default
-    assert manifest.get("sell_fulfillment.issueRefund").risk == "unknown"
+    op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
+    assert op.risk == "unknown"
