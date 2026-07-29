@@ -34,6 +34,7 @@ from bidkit_cli.safety import classify_safety
 
 def test_p0_unknown_without_expert_gate_refused(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.issueRefund")  # unclassified POST
+    assert op is not None
     with pytest.raises(SafetyError) as exc:
         classify_safety(op, allow_write=True, allow_write_expert=False, yes=True)
     assert exc.value.exit_code == EXIT_SAFETY
@@ -42,6 +43,7 @@ def test_p0_unknown_without_expert_gate_refused(manifest: Manifest) -> None:
 
 def test_p0_unknown_with_expert_but_no_yes_refused(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
     with pytest.raises(SafetyError) as exc:
         classify_safety(op, allow_write=True, allow_write_expert=True, yes=False)
     assert "--yes" in (exc.value.hint or "")
@@ -49,21 +51,24 @@ def test_p0_unknown_with_expert_but_no_yes_refused(manifest: Manifest) -> None:
 
 def test_p0_unknown_with_both_gates_allowed(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
     risk, _ = classify_safety(op, allow_write=True, allow_write_expert=True, yes=True)
     assert risk == "unknown"
 
 
 def test_p0_external_side_effect_not_overridable(manifest: Manifest) -> None:
     op = manifest.get("commerce_notification.testSubscription")
+    assert op is not None
     # Even both expert gates cannot force an external side effect.
     with pytest.raises(SafetyError) as exc:
         classify_safety(op, allow_write=True, allow_write_expert=True, yes=True)
     assert "not overridable" in (exc.value.hint or "")
-    assert "external side effect" in exc.value.hint.lower()
+    assert "external side effect" in (exc.value.hint or "").lower()
 
 
 def test_p0_safety_error_payload_includes_risk(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.deleteInventoryItem")
+    assert op is not None
     with pytest.raises(SafetyError) as exc:
         classify_safety(op, allow_write=False, allow_write_expert=False, yes=False)
     payload = exc.value.as_dict()["error"]
@@ -74,6 +79,7 @@ def test_p0_safety_error_payload_includes_risk(manifest: Manifest) -> None:
 
 def test_p0_report_safety_error_exits_7(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
     with pytest.raises(SafetyError) as raised:
         classify_safety(op, allow_write=True, allow_write_expert=False, yes=True)
     assert report_error(raised.value, json_mode=True) == EXIT_SAFETY
@@ -98,6 +104,7 @@ def _ctx(manifest: Manifest, handler) -> CliContext:
 def test_p0_unknown_dispatches_with_both_gates(manifest: Manifest) -> None:
     """An unclassified POST really leaves the process only under both gates."""
     op = manifest.get("cancellation.checkCancellationEligibility")
+    assert op is not None
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -117,6 +124,7 @@ def test_p0_unknown_dispatches_with_both_gates(manifest: Manifest) -> None:
 
 def test_p0_unknown_blocked_without_expert_gate_in_execute(manifest: Manifest) -> None:
     op = manifest.get("cancellation.checkCancellationEligibility")
+    assert op is not None
     ctx = _ctx(manifest, lambda r: httpx2.Response(200, json={}))
     ctx.allow_write_expert = False
     ctx.yes = True
@@ -130,6 +138,7 @@ def test_p0_unknown_blocked_without_expert_gate_in_execute(manifest: Manifest) -
 
 def test_p0_dry_run_needs_no_gate_and_never_dispatches(manifest: Manifest) -> None:
     op = manifest.get("cancellation.checkCancellationEligibility")
+    assert op is not None
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -257,6 +266,7 @@ _HELP_CASES = {
 @pytest.mark.parametrize("key,path", list(_HELP_CASES.items()))
 def test_p1_help_self_contained(manifest: Manifest, runner: CliRunner, key, path) -> None:
     op = manifest.get(key)
+    assert op is not None
     result = runner.invoke(cli, [*path, "--help"])
     assert result.exit_code == 0, result.output
     out = result.output
@@ -318,6 +328,7 @@ def test_p1_every_example_has_safe_flag_and_command(manifest: Manifest) -> None:
 
 def test_p1_write_examples_carry_the_right_gates(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.deleteInventoryItem")
+    assert op is not None
     execute_examples = [e for e in op.examples if not e.safe]
     assert execute_examples, "a destructive op should expose an execute example"
     cmd = execute_examples[0].command
@@ -326,6 +337,7 @@ def test_p1_write_examples_carry_the_right_gates(manifest: Manifest) -> None:
 
 def test_p1_unknown_examples_carry_expert_and_yes(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.issueRefund")
+    assert op is not None
     execute_examples = [e for e in op.examples if not e.safe]
     assert execute_examples
     cmd = execute_examples[0].command
@@ -334,6 +346,7 @@ def test_p1_unknown_examples_carry_expert_and_yes(manifest: Manifest) -> None:
 
 def test_p1_external_side_effect_has_no_execute_example(manifest: Manifest) -> None:
     op = manifest.get("commerce_notification.testSubscription")
+    assert op is not None
     execute_examples = [e for e in op.examples if not e.safe]
     assert execute_examples == []  # not overridable -> no execute example
 
@@ -405,6 +418,7 @@ def test_p1_api_call_accepts_canonical_key_offline() -> None:
     ctx.output_format = "json"
     ctx.pretty = False
     op = ctx._manifest.get("sell_fulfillment.getOrders")
+    assert op is not None
     buf = io.StringIO()
     with redirect_stdout(buf):
         from bidkit_cli.dispatch import execute
@@ -420,6 +434,7 @@ def test_p1_api_call_accepts_canonical_key_offline() -> None:
 
 def test_p2_include_meta_wraps_payload_with_request_id(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -449,6 +464,7 @@ def test_p2_include_meta_wraps_payload_with_request_id(manifest: Manifest) -> No
 
 def test_p2_include_meta_off_is_plain_payload(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"sku": "A"})
@@ -467,6 +483,7 @@ def test_p2_include_meta_off_is_plain_payload(manifest: Manifest) -> None:
 
 def test_p2_include_meta_never_leaks_secrets(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -489,6 +506,7 @@ def test_p2_include_meta_never_leaks_secrets(manifest: Manifest) -> None:
 
 def test_p2_include_meta_with_select_applies_to_data(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"sku": "A", "title": "t"})
