@@ -61,6 +61,7 @@ def _invoke(args: list[str]):
 def test_f1_camelcase_path_positional_binds(manifest: Manifest) -> None:
     """getOrder's path wire name is ``orderId``; the positional must reach it."""
     op = manifest.get("sell_fulfillment.getOrder")
+    assert op is not None
     assert op.path_params[0].wire_name == "orderId"
     preview = _dry_run(["sell", "fulfillment", "get-order", "ORDER_ID"])
     assert preview["path_params"] == {"orderId": "ORDER_ID"}
@@ -68,6 +69,7 @@ def test_f1_camelcase_path_positional_binds(manifest: Manifest) -> None:
 
 def test_f1_snake_case_path_positional_binds(manifest: Manifest) -> None:
     op = manifest.get("buy_browse.getItem")
+    assert op is not None
     assert op.path_params[0].wire_name == "item_id"
     preview = _dry_run(["buy", "browse", "get-item", "ITEM1"])
     assert preview["path_params"] == {"item_id": "ITEM1"}
@@ -93,6 +95,7 @@ def test_f1_api_call_universal_path_satisfies_without_positional(
 
 def test_f1_multi_path_args_bind_in_order(manifest: Manifest) -> None:
     op = manifest.get("sell_account_v1.getSalesTax")
+    assert op is not None
     assert [p.wire_name for p in op.path_params] == ["countryCode", "jurisdictionId"]
     preview = _dry_run(["sell", "account", "get-sales-tax", "US", "NY"])
     assert preview["path_params"] == {"countryCode": "US", "jurisdictionId": "NY"}
@@ -146,6 +149,7 @@ def test_f2_named_header_reaches_the_wire(manifest: Manifest) -> None:
     """A named header option must be sent on the actual HTTP request."""
     ctx, seen = _recording_ctx(manifest, lambda req: httpx2.Response(200, json={"ok": True}))
     op = manifest.get("buy_browse.getItem")
+    assert op is not None
     buf = io.StringIO()
     with redirect_stdout(buf):
         execute(
@@ -162,6 +166,7 @@ def test_f2_named_header_reaches_the_wire(manifest: Manifest) -> None:
 
 def test_f3_missing_required_query_rejected(manifest: Manifest) -> None:
     op = manifest.get("commerce_feedback.getFeedback")
+    assert op is not None
     required = {p.wire_name for p in op.query_params if p.required}
     assert {"feedback_type", "user_id"} <= required
     with pytest.raises(UsageError) as exc:
@@ -172,6 +177,7 @@ def test_f3_missing_required_query_rejected(manifest: Manifest) -> None:
 
 def test_f3_missing_required_json_body_rejected(manifest: Manifest) -> None:
     op = manifest.get("commerce_translation.translate")
+    assert op is not None
     assert op.request.kind == "json" and op.request.required
     with pytest.raises(UsageError):
         _dry_run(["commerce", "translation", "translate"])
@@ -234,6 +240,7 @@ def skill_docs_module():
     spec = importlib.util.spec_from_file_location(
         "_generate_skill_docs", SCRIPTS / "generate_skill_docs.py"
     )
+    assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -248,6 +255,7 @@ def test_f5_service_page_uses_effective_risk(manifest: Manifest, skill_docs_modu
         service, manifest.operations_for_service("commerce_translation")
     )
     op = manifest.get("commerce_translation.translate")
+    assert op is not None
     risk, _ = effective_risk(op)
     assert op.risk == "unknown"          # base risk still unknown ...
     assert risk == "read"                # ... but effective risk is read

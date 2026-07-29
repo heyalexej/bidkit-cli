@@ -62,6 +62,7 @@ def _dry_run(args: list[str]) -> dict:
 def test_f1_unknown_query_reaches_the_wire(manifest: Manifest) -> None:
     """An allowed unknown query param is forwarded via the generic transport path."""
     op = manifest.get("sell_fulfillment.getOrders")
+    assert op is not None
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -103,6 +104,7 @@ def test_f1_unknown_query_appears_in_dry_run_preview(manifest: Manifest) -> None
 def test_f1_known_only_query_uses_fast_path(manifest: Manifest) -> None:
     """When no unknown params exist, dispatch still works normally."""
     op = manifest.get("sell_fulfillment.getOrders")
+    assert op is not None
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -169,6 +171,7 @@ def test_f2_dry_run_redacts_sensitive_query(manifest: Manifest) -> None:
 
 def test_f2_raw_mode_redacts_sensitive_response_headers(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -193,6 +196,7 @@ def test_f2_raw_mode_redacts_sensitive_response_headers(manifest: Manifest) -> N
 
 def test_f2_include_meta_redacts_nothing_leaks(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -220,6 +224,7 @@ def test_f2_include_meta_redacts_nothing_leaks(manifest: Manifest) -> None:
 
 def test_f3_ebay_request_id_preferred(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -244,6 +249,7 @@ def test_f3_ebay_request_id_preferred(manifest: Manifest) -> None:
 def test_f3_traffic_id_falls_back_to_request_id(manifest: Manifest) -> None:
     """When no eBay request-id header exists, request_id falls back to the trace."""
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
@@ -264,6 +270,7 @@ def test_f3_traffic_id_falls_back_to_request_id(manifest: Manifest) -> None:
 
 def test_f3_no_trace_yields_nulls(manifest: Manifest) -> None:
     op = manifest.get("sell_inventory.getInventoryItem")
+    assert op is not None
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"sku": "A"})
@@ -301,6 +308,7 @@ def test_f4_every_example_is_shell_safe(manifest: Manifest) -> None:
 
 def test_f4_example_placeholders_are_bare_words(manifest: Manifest) -> None:
     op = manifest.get("sell_fulfillment.getOrder")  # required path param order-id
+    assert op is not None
     safe = next(e for e in op.examples if e.safe)
     # The placeholder is an uppercased bare word, not ``<order-id>``.
     assert "ORDER-ID" in safe.command
