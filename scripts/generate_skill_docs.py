@@ -113,7 +113,8 @@ def _service_page(service, operations) -> str:
         f"- **CLI:** `bidkit {service.cli_namespace} {service.cli_name}`",
         f"- **Version:** {service.version}",
         f"- **Base path:** `{service.base_path}`  ·  **Subdomain:** `{service.subdomain}`",
-        f"- **Auth scheme:** `{service.auth_scheme}`  ·  **Requires signature:** {service.requires_signature}",
+        f"- **Auth scheme:** `{service.auth_scheme}`  ·  "
+        f"**Requires signature:** {service.requires_signature}",
         f"- **Source spec:** `{service.source_spec}`",
         f"- **Operations:** {len(operations)}",
         "",
@@ -150,7 +151,8 @@ def _summary_page(manifest) -> str:
         "",
         f"- **Services:** {manifest.data.service_count}",
         f"- **Operations:** {manifest.data.operation_count}",
-        f"- **Namespaces:** {manifest.data.namespace_count} ({', '.join(manifest.data.namespaces)})",
+        f"- **Namespaces:** {manifest.data.namespace_count} "
+        f"({', '.join(manifest.data.namespaces)})",
         f"- **Manifest schema version:** {manifest.data.schema_version}",
         "",
         "## Operations by namespace",
@@ -163,7 +165,11 @@ def _summary_page(manifest) -> str:
         svcs = [s for s in manifest.services if s.namespace == namespace]
         ops = manifest.operations_for_namespace(namespace)
         lines.append(f"| `{cli}` | {len(svcs)} | {len(ops)} |")
-    lines += ["", "## Services", "", "| Service key | CLI | Title | Operations |", "|---|---|---|---|"]
+    lines += [
+        "", "## Services", "",
+        "| Service key | CLI | Title | Operations |",
+        "|---|---|---|---|",
+    ]
     for service in sorted(manifest.services, key=lambda s: s.key):
         ops = manifest.operations_for_service(service.key)
         lines.append(

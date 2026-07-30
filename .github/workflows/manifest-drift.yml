@@ -49,7 +49,10 @@ jobs:
       # Run tools from the job venv directly: `uv run` would re-resolve the
       # project and reinstall bidkit from PyPI over the pinned checkout above.
       - name: Regenerate manifest from the clean bidkit checkout
-        run: .venv/bin/python scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
+        # The bidkit generator shells out to a bare `datamodel-codegen`, which
+        # only exists in the job venv's bin dir; put that on PATH while still
+        # invoking the venv python directly to avoid a uv re-resolution.
+        run: PATH="$PWD/.venv/bin:$PATH" .venv/bin/python scripts/regenerate_manifest.py --bidkit-dir bidkit-checkout
 
       # The skill's generated pages are a view over the same manifest, so they
       # drift for exactly the same reasons and are held to the same standard:
