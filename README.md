@@ -2,7 +2,7 @@
 
 `bidkit` is the command-line interface for the [bidkit](https://github.com/heyalexej/bidkit)
 eBay SDK. Every eBay REST operation represented by the checked-in OpenAPI specs is
-callable from the shell: **41 services, 455 operations** across the `buy`,
+callable from the shell: **40 services, 452 operations** across the `buy`,
 `commerce`, `developer`, `post-order`, and `sell` namespaces.
 
 The CLI is generated from the same normalized OpenAPI documents that generate the

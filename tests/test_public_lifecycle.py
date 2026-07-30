@@ -570,7 +570,35 @@ def test_auth_doctor_show_capabilities(runner: CliRunner) -> None:
     payload = json.loads(result.output)
     assert "capabilities" in payload
     ops = {c["operation"] for c in payload["capabilities"]["capabilities"]}
-    assert "sell_compliance.getListingViolations" in ops  # stale
+    # Restricted surfaces still appear in the doctor snapshot...
+    assert "sell_leads.getAllClassifiedLeads" in ops
+    # ...but the decommissioned Sell Compliance (PBSE) surface no longer does:
+    # its stale capability policy was removed alongside the API itself.
+    assert "sell_compliance.getListingViolations" not in ops
+
+
+def test_sell_compliance_capability_policy_removed() -> None:
+    """The decommissioned Sell Compliance (PBSE) surface has no capability policy.
+
+    eBay rolled back the Product-Based Shopping Experience mandate and the Sell
+    Compliance REST API is fully decommissioned, so no operation in the
+    ``sell_compliance`` service carries a hand-maintained capability entry, and
+    the ``stale_or_not_applicable`` availability label (which only that surface
+    used) is gone from the module's public surface.
+    """
+    import bidkit_cli.capability_policy as policy
+
+    # The stale label was used solely by the Sell Compliance PBSE entries.
+    assert not hasattr(policy, "AVAILABILITY_STALE")
+    assert "AVAILABILITY_STALE" not in policy.__all__
+
+    # No sell_compliance operation retains a hand-maintained capability policy.
+    for op_key in (
+        "sell_compliance.getListingViolations",
+        "sell_compliance.getListingViolationsSummary",
+        "sell_compliance.suppressViolation",
+    ):
+        assert policy.capability_for(op_key) is None, op_key
 
 
 def test_error_json_includes_classification(manifest: Manifest) -> None:

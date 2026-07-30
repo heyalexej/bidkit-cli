@@ -18,6 +18,22 @@ def test_manifest_counts(manifest: Manifest) -> None:
     assert manifest.data.namespace_count == 5
 
 
+@pytest.mark.xfail(
+    reason=(
+        "Sell Compliance (PBSE) REST API is fully decommissioned; its service and "
+        "3 operations are removed once the generated manifest is regenerated "
+        "(target surface: 40 services / 452 operations, down from 41 / 455). "
+        "The manifest is owned by a parallel worker and still reflects the old "
+        "surface, so this contract is expected to fail until regeneration lands "
+        "— remove this xfail once manifest.json no longer contains sell_compliance."
+    )
+)
+def test_sell_compliance_surface_is_removed(manifest: Manifest) -> None:
+    """The decommissioned Sell Compliance API must not survive regeneration."""
+    assert "sell_compliance" not in {svc.key for svc in manifest.services}
+    assert manifest.operations_for_service("sell_compliance") == []
+
+
 def test_every_operation_has_unique_cli_path(manifest: Manifest) -> None:
     paths = [tuple(op.cli_path) for op in manifest.operations]
     assert len(paths) == len(set(paths))

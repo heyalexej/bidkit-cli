@@ -4,9 +4,8 @@ Generated OAS coverage says an operation *exists*; it does not say an account
 can call it. This command surfaces the hand-maintained capability policy
 (:mod:`bidkit_cli.capability_policy`) merged with the generated manifest, so an
 agent can see which surfaces are available, which are restricted (Leads, eDIS,
-VeRO, Buy bulk/Deal/Marketing), which are stale (Compliance PBSE), and which are
-upstream-broken (awaiting feedback) — without inferring availability from a
-single failing call.
+VeRO, Buy bulk/Deal/Marketing), and which are upstream-broken (awaiting
+feedback) — without inferring availability from a single failing call.
 
 Default output is bounded and never exposes access tokens, raw response bodies,
 lead contact information, or seller addresses.
@@ -71,7 +70,7 @@ def capabilities_group() -> None:
 @capabilities_group.command("list")
 @click.option("--status", default=None,
               help="Filter by availability label (e.g. unavailable, limited_release, "
-                   "account_restricted, stale_or_not_applicable).")
+                   "account_restricted, membership_restricted).")
 @click.option("--service", default=None, help="Filter by service key.")
 @click.option("--all", "show_all", is_flag=True, default=False,
               help="Include every operation, not just the curated restricted/broken "

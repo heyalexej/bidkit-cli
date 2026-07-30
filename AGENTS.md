@@ -87,7 +87,7 @@ something came back.
 ## Scope
 
 - **eBay REST only.** This CLI is a view over a generated manifest of eBay's
-  REST operations (455 operations, 41 services). Do not add the legacy XML
+  REST operations (452 operations, 40 services). Do not add the legacy XML
   Trading API or any hand-written endpoint. If a task genuinely needs Trading,
   it belongs in a private script outside this repo.
 - **`bidkit` (the SDK) is a dependency**, not part of this repo. Do not vendor,
