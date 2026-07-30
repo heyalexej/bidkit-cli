@@ -34,7 +34,7 @@ jobs:
           repository: heyalexej/bidkit
           # Pin to the bidkit generation the manifest was produced from. Bump
           # intentionally together with a manifest regeneration + range bump.
-          ref: "v0.2.0"
+          ref: "v0.3.0"
           path: bidkit-checkout
 
       - name: Install bidkit (editable) + CLI dev deps

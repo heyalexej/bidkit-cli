@@ -25,10 +25,10 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-  # Bounded to the 0.1.x series: the command surface is generated from a
+  # Bounded to the 0.3.x series: the command surface is generated from a
   # specific bidkit generation snapshot, and a future minor/major can rename
   # methods/services. Bump intentionally when the manifest is regenerated.
-  "bidkit>=0.2.0,<0.3",
+  "bidkit>=0.3.0,<0.4",
   "click>=8.1,<9",
   "httpx2>=2.9",
   "rich>=13,<15",

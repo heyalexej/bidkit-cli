@@ -585,7 +585,7 @@ def test_f13_list_default_is_curated_only(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["capabilities", "list", "--format", "json"])
     report = json.loads(result.output)
     assert report["default_view"] == "curated"
-    # The default view is much smaller than the full ~455-operation dump.
+    # The default view is much smaller than the full ~452-operation dump.
     assert report["operation_count"] < 50
     # Every listed op has a non-default availability (curated).
     assert all(v["availability"] != "available" for v in report["capabilities"])

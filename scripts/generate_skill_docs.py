@@ -21,20 +21,48 @@ from bidkit_cli.safety import effective_risk
 SKILL_ROOT = Path(__file__).resolve().parent.parent / "skills" / "bidkit-cli"
 
 
+def _prune_stale_service_pages(services_out: Path, expected_keys: set[str]) -> list[Path]:
+    """Delete generated service pages whose service is no longer in the manifest.
+
+    ``services_out`` holds exactly one generated page per service key, so any
+    ``*.md`` whose stem is not a current service key is stale (e.g. a page left
+    behind when eBay decommissions an API and it drops out of the manifest).
+    Nothing outside ``services_out`` is ever touched, and current pages are kept.
+    Returns the removed paths (empty when there is nothing to prune).
+    """
+    removed: list[Path] = []
+    for page in services_out.glob("*.md"):
+        if page.stem in expected_keys:
+            continue
+        page.unlink()
+        removed.append(page)
+    return removed
+
+
 def main() -> None:
     manifest = load_manifest()
     services_out = SKILL_ROOT / "generated" / "services"
     services_out.mkdir(parents=True, exist_ok=True)
+
+    # Drop stale service pages first so a removed service does not leave a
+    # misleading reference behind; only *.md whose stem is no longer a current
+    # service key is touched, so hand-written notes elsewhere are unaffected.
+    expected_keys = {service.key for service in manifest.services}
+    pruned = _prune_stale_service_pages(services_out, expected_keys)
 
     # Per-service reference pages.
     for service in manifest.services:
         operations = manifest.operations_for_service(service.key)
         (services_out / f"{service.key}.md").write_text(_service_page(service, operations))
 
-    # Manifest summary (counts + namespace/service overview; never the 455-op dump).
+    # Manifest summary (counts + namespace/service overview; never the 452-op dump).
     summary = SKILL_ROOT / "generated" / "manifest-summary.md"
     summary.write_text(_summary_page(manifest))
-    print(f"wrote {len(manifest.services)} service pages + manifest-summary.md -> {services_out.parent}")
+    print(
+        f"wrote {len(manifest.services)} service pages + manifest-summary.md "
+        f"-> {services_out.parent}"
+        + (f" (pruned {len(pruned)} stale page(s))" if pruned else "")
+    )
 
 
 def _risk_cell(op) -> str:

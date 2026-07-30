@@ -125,7 +125,7 @@ def _universal_options() -> list[click.Option]:
     universal override surface is byte-identical to ``api call`` and never drifts
     between the two. Each call returns fresh ``Option`` instances; Click options
     are mutable and bind to one command when parsed, so a shared instance would
-    cross-wire parsing across the 455-operation tree.
+    cross-wire parsing across the 452-operation tree.
     """
     from .options import make_universal_options
 

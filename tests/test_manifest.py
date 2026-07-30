@@ -6,8 +6,8 @@ import pytest
 
 from bidkit_cli.manifest import AmbiguousOperation, Manifest
 
-EXPECTED_SERVICES = 41
-EXPECTED_OPERATIONS = 455
+EXPECTED_SERVICES = 40
+EXPECTED_OPERATIONS = 452
 
 
 def test_manifest_counts(manifest: Manifest) -> None:

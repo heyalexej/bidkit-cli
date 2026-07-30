@@ -42,8 +42,16 @@ def test_api_list_reports_counts(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["api", "list", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["service_count"] == 41
-    assert payload["operation_count"] == 455
+    assert payload["service_count"] == 40
+    assert payload["operation_count"] == 452
+
+
+def test_api_list_omits_removed_sell_compliance(runner: CliRunner) -> None:
+    """The decommissioned Sell Compliance surface must not appear in the listing."""
+    result = runner.invoke(cli, ["api", "list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert not any(op["key"].startswith("sell_compliance.") for op in payload["operations"])
 
 
 def test_api_list_filter_namespace(runner: CliRunner) -> None:

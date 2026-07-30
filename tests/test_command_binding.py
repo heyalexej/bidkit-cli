@@ -13,7 +13,7 @@ These exercise the Click-to-:func:`run_operation` dispatch boundary:
 
 A manifest-driven command-adapter matrix invokes ``--help`` on every generated
 operation so a param-declaration regression (e.g. the hyphenated-header crash)
-cannot recur silently across the 455-op surface.
+cannot recur silently across the 452-op surface.
 """
 
 from __future__ import annotations
@@ -298,6 +298,24 @@ def test_f5_committed_pages_show_effective_risk() -> None:
     blocked = (SKILL_GEN / "services" / "commerce_notification.md").read_text()
     row = next(line for line in blocked.splitlines() if "testSubscription" in line)
     assert "unknown · " in row
+
+
+def test_skill_docs_prune_drops_stale_service_pages(tmp_path, skill_docs_module) -> None:
+    """A page whose service is gone from the manifest is pruned; current ones kept."""
+    services = tmp_path / "services"
+    services.mkdir()
+    (services / "sell_inventory.md").write_text("keep")
+    (services / "buy_browse.md").write_text("keep")
+    (services / "sell_compliance.md").write_text("stale")  # decommissioned surface
+
+    removed = skill_docs_module._prune_stale_service_pages(
+        services, {"sell_inventory", "buy_browse"}
+    )
+
+    assert {p.name for p in removed} == {"sell_compliance.md"}
+    assert (services / "sell_inventory.md").exists()
+    assert (services / "buy_browse.md").exists()
+    assert not (services / "sell_compliance.md").exists()
 
 
 # ---------------------------------------------------------------------------
