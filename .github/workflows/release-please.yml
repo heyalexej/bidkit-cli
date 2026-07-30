@@ -18,10 +18,76 @@ permissions:
   contents: write
   pull-requests: write
 
+# Serialize concurrent manual dispatches. Two overlapping runs race on the
+# release branch — release-please force-pushes it and the relock job pushes
+# to it, so a non-fast-forward loser silently drops its lock update. Let the
+# newer dispatch win (cancel-in-progress): release-please recomputes the PR
+# from the manifest idempotently and the relock step re-derives an identical
+# lock, so canceling a superseded run loses no work and never corrupts the
+# branch (git ref updates are atomic).
+concurrency:
+  group: release-please
+  cancel-in-progress: true
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      # True whenever release-please created OR updated a release PR this
+      # run (the action sets it from the non-empty PR list, not first-time
+      # creation only). Drives the re-lock companion below.
+      prs_created: ${{ steps.rp.outputs.prs_created }}
     steps:
       # Manifest mode: version semantics live in release-please-config.json
       # (bump-minor-pre-major keeps breaking changes at a minor bump pre-1.0).
-      - uses: googleapis/release-please-action@v5
+      - id: rp
+        uses: googleapis/release-please-action@v5
+
+  # release-please bumps version in pyproject.toml and
+  # src/bidkit_cli/__init__.py but not uv.lock, where uv records the
+  # editable root package's version; re-derive the lock on the release PR
+  # branch so the two stay in sync.
+  #
+  # A native extra-files entry can do this — e.g.
+  #   {"type":"toml","path":"uv.lock",
+  #    "jsonpath":"$.package[?(@.name.value==\"bidkit-cli\")].version"}
+  # rewrites only the root package's version line and preserves formatting.
+  # The generic-toml updater wraps every scalar as {start,end,value} before
+  # JSONPath, so `.value` reaches the bare string (also why the obvious
+  # @.name=="bidkit-cli" never matches). Prefer a workflow step anyway:
+  # that reach-through rides on an open upstream bug
+  # (googleapis/release-please#2455) and would silently revert to a no-op —
+  # reintroducing drift invisibly — if upstream unwraps the tagged values,
+  # whereas `uv lock` failing is observable. A positional package index is
+  # the other obvious jsonpath but silently rewrites the wrong package when
+  # the dependency set reorders.
+  #
+  # Runs in the same dispatched run as release-please and gated on its
+  # prs_created output. A separate pull_request-triggered companion would
+  # never fire: events raised by the default GITHUB_TOKEN do not start new
+  # workflow runs, and release-please opens its PR with that token.
+  relock:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.prs_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Single-package manifest mode; confirmed from this repo's own
+          # release history (the merge of PR #1). Avoids depending on the
+          # prs JSON output shape, which carries no stability promise.
+          ref: release-please--branches--main
+      - uses: astral-sh/setup-uv@v5
+      - name: Re-lock
+        run: uv lock
+      - name: Commit uv.lock if it drifted
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock already in sync"
+          else
+            git add uv.lock
+            git commit -m "chore: keep uv.lock's root version in sync with pyproject"
+            git push
+          fi

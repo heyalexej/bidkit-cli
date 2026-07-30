@@ -17,6 +17,18 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
+      # Catch a stale lock before sync can re-lock and mask the drift.
+      # release-please bumps pyproject but not uv.lock's root-package
+      # version, so without this `uv sync` silently rewrites the lock each
+      # run. This detects drift on the push-to-main run, not release-PR
+      # protection — release-please opens its PR with the default
+      # GITHUB_TOKEN, which starts no CI, so the check only runs after
+      # merge. One min-version leg suffices: uv resolves across all of
+      # requires-python regardless of the interpreter, so 3.11/3.12/3.13
+      # agree.
+      - name: Lockfile in sync
+        if: matrix.python-version == '3.11'
+        run: uv lock --check
       - name: Sync
         run: uv sync --extra dev
       # ty is pinned in dev and run on the project's minimum supported Python
