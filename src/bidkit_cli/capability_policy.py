@@ -2,11 +2,10 @@
 
 Generated OAS coverage says an operation *exists*; it does not say an account
 can call it. eBay restricts several surfaces behind scopes the account does not
-hold, memberships, partner/production approvals, or account eligibility, and one
-surface (Compliance PBSE) has been rolled back. The remedy is a
-generated-but-overridable capability manifest that distinguishes static facts
-(OAS existence, documented scopes) from account-specific restrictions a small
-hand-maintained policy file expresses.
+hold, memberships, partner/production approvals, or account eligibility. The
+remedy is a generated-but-overridable capability manifest that distinguishes
+static facts (OAS existence, documented scopes) from account-specific
+restrictions a small hand-maintained policy file expresses.
 
 This module is that policy file. It is deliberately small and explicit: each
 entry names the restriction, the remedy, and whether to retry a failure. The
@@ -30,7 +29,6 @@ AVAILABILITY_PRODUCTION_ENTITLEMENT = "production_entitlement_required"
 AVAILABILITY_MEMBERSHIP_RESTRICTED = "membership_restricted"
 AVAILABILITY_ACCOUNT_RESTRICTED = "account_restricted"
 AVAILABILITY_UPSTREAM_FAILURE = "upstream_failure"
-AVAILABILITY_STALE = "stale_or_not_applicable"
 
 
 @dataclass
@@ -170,30 +168,6 @@ _POLICY: dict[str, CapabilityPolicy] = {
             "https://developer.ebay.com/api-docs/buy/buy-requirements.html",
         ],
     ),
-    # Compliance PBSE was rolled back; PRODUCT_ADOPTION 404s for everyone
-    # with normal inventory access. Keep the operation callable for completeness
-    # but mark it stale/not-applicable; do not guide a listing repair from it.
-    "sell_compliance.getListingViolations": CapabilityPolicy(
-        availability=AVAILABILITY_STALE,
-        note=(
-            "The Product-Based Shopping Experience mandate was rolled back; "
-            "PRODUCT_ADOPTION is not currently applicable and returns 404 for "
-            "accounts with normal inventory access. Do not repair listings from "
-            "this unless a live response contains actual violations."
-        ),
-        retry=False,
-        references=[
-            "https://developer.ebay.com/api-docs/sell/compliance/resources/methods",
-            "https://developer.ebay.com/api-docs/sell/static/inventory/pbse-compliance-reason-codes.html",
-        ],
-    ),
-    "sell_compliance.getListingViolationsSummary": CapabilityPolicy(
-        availability=AVAILABILITY_STALE,
-        retry=False,
-        references=[
-            "https://developer.ebay.com/api-docs/sell/compliance/resources/methods"
-        ],
-    ),
 }
 
 # Operations verified to work for a standard seller account (single-item Browse,
@@ -263,11 +237,6 @@ def _synthesize_hint(policy: CapabilityPolicy) -> str | None:
         return "Membership-restricted surface; the scope is necessary but not sufficient."
     if availability == AVAILABILITY_ACCOUNT_RESTRICTED:
         return "Account-restricted surface; this account is ineligible."
-    if availability == AVAILABILITY_STALE:
-        return (
-            "Stale/not-applicable surface; do not repair from this unless a live "
-            "response has violations."
-        )
     if availability == AVAILABILITY_UPSTREAM_FAILURE:
         return "Upstream failure observed for this account; retry later."
     return None
@@ -279,7 +248,6 @@ __all__ = [
     "AVAILABILITY_LIMITED_RELEASE",
     "AVAILABILITY_MEMBERSHIP_RESTRICTED",
     "AVAILABILITY_PRODUCTION_ENTITLEMENT",
-    "AVAILABILITY_STALE",
     "AVAILABILITY_UPSTREAM_FAILURE",
     "CapabilityPolicy",
     "capability_for",

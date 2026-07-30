@@ -2,8 +2,8 @@
 
 Machine-generated from `manifest.json`. Do not edit by hand.
 
-- **Services:** 41
-- **Operations:** 455
+- **Services:** 40
+- **Operations:** 452
 - **Namespaces:** 5 (buy, commerce, developer, post_order, sell)
 - **Manifest schema version:** 1
 
@@ -15,7 +15,7 @@ Machine-generated from `manifest.json`. Do not edit by hand.
 | `commerce` | 10 | 64 |
 | `developer` | 3 | 6 |
 | `post-order` | 4 | 58 |
-| `sell` | 17 | 298 |
+| `sell` | 16 | 295 |
 
 ## Services
 
@@ -48,7 +48,6 @@ Machine-generated from `manifest.json`. Do not edit by hand.
 | [`sell_account_v1`](services/sell_account_v1.md) | `sell account` | Account v1 API | 37 |
 | [`sell_account_v2`](services/sell_account_v2.md) | `sell account-v2` | Account v2 API | 14 |
 | [`sell_analytics`](services/sell_analytics.md) | `sell analytics` | Analytics API | 4 |
-| [`sell_compliance`](services/sell_compliance.md) | `sell compliance` | Compliance API | 3 |
 | [`sell_edelivery_international_shipping`](services/sell_edelivery_international_shipping.md) | `sell edelivery-international-shipping` | EDIS public shipping API | 27 |
 | [`sell_feed`](services/sell_feed.md) | `sell feed` | Feed API | 23 |
 | [`sell_finances`](services/sell_finances.md) | `sell finances` | Finances API | 11 |

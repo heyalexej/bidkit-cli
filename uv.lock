@@ -26,7 +26,7 @@ wheels = [
 
 [[package]]
 name = "bidkit"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -34,9 +34,9 @@ dependencies = [
     { name = "orjson" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/a7/35eb4c522f307f0c71df5cbbbcca50cd7fe498bc2920796923ae733b48eb/bidkit-0.2.0.tar.gz", hash = "sha256:f15e110faab0cd16ee4102c7d204ca7fe4d54c14f4059865ab7586096e4664fa", size = 559917, upload-time = "2026-07-26T16:53:42.993Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/8a/d8f5da9de892ae232f54dcdd89bc93619bf07bd3ccab94663e8eaf8d88df/bidkit-0.3.0.tar.gz", hash = "sha256:69b6fa480b62a84b93612afff6ca80f22b400899c0f8a153691c0b57e2a43524", size = 557236, upload-time = "2026-07-30T03:25:32.301Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/fa/27dca0bef35011c418af44640907725a3421100ef507a091a8662d6eb329/bidkit-0.2.0-py3-none-any.whl", hash = "sha256:659f3c50949afaeba4bb1a6c29f62b0105da472229bc24824631219f7f0016e0", size = 456477, upload-time = "2026-07-26T16:53:41.071Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/18/b1d6e814f4b1ded6ffe6471f5ee0e9e82e6961d1684916a8d13974f54ff6/bidkit-0.3.0-py3-none-any.whl", hash = "sha256:1d93b7bfc356a3609ac501f8201a6ceeb42594a57e803397d34a5b43ced1f3d2", size = 452147, upload-time = "2026-07-30T03:25:30.804Z" },
 ]
 
 [[package]]
@@ -60,7 +60,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bidkit", specifier = ">=0.2.0,<0.3" },
+    { name = "bidkit", specifier = ">=0.3.0,<0.4" },
     { name = "click", specifier = ">=8.1,<9" },
     { name = "httpx2", specifier = ">=2.9" },
     { name = "orjson", specifier = ">=3.10" },

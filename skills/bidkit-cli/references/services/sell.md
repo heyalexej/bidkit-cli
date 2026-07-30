@@ -1,6 +1,6 @@
 # Sell API namespace
 
-Seller/account APIs: account, account-v2, analytics, compliance, feed, **finances** (signed),
+Seller/account APIs: account, account-v2, analytics, feed, **finances** (signed),
 **fulfillment** (orders/shipping/refunds), **inventory**, logistics, marketing, metadata,
 recommendation, stores, and more.
 

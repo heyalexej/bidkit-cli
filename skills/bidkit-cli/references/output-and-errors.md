@@ -107,7 +107,7 @@ a bounded `normalized_body` carries `{status, operation, request_id,
 content_type, body_preview}` (≤280 chars). A failed write/destructive call
 additionally gets the non-idempotency note: "remote state may have changed —
 re-read before retrying." The capability policy suppresses retries on surfaces
-known to fail for this account (Leads, VeRO, eDIS, Compliance), so a 500 on
+known to fail for this account (Leads, VeRO, eDIS, Buy bulk/Deal/Marketing), so a 500 on
 those is `retryable: false`. Use `bidkit capabilities list` to see which.
 
 The error shape follows the *requested* `--format`, not stdout's TTY-ness:

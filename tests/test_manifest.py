@@ -6,8 +6,8 @@ import pytest
 
 from bidkit_cli.manifest import AmbiguousOperation, Manifest
 
-EXPECTED_SERVICES = 41
-EXPECTED_OPERATIONS = 455
+EXPECTED_SERVICES = 40
+EXPECTED_OPERATIONS = 452
 
 
 def test_manifest_counts(manifest: Manifest) -> None:
@@ -16,6 +16,18 @@ def test_manifest_counts(manifest: Manifest) -> None:
     assert len(manifest.services) == EXPECTED_SERVICES
     assert len(manifest.operations) == EXPECTED_OPERATIONS
     assert manifest.data.namespace_count == 5
+
+
+def test_sell_compliance_surface_is_removed(manifest: Manifest) -> None:
+    """The decommissioned Sell Compliance (PBSE) REST API must stay absent.
+
+    eBay rolled back the Product-Based Shopping Experience mandate and fully
+    decommissioned the Sell Compliance REST API, so neither its service nor any
+    of its operations may appear in the generated surface. This is a negative
+    regression guard: a regenerated manifest must not reintroduce it.
+    """
+    assert "sell_compliance" not in {svc.key for svc in manifest.services}
+    assert manifest.operations_for_service("sell_compliance") == []
 
 
 def test_every_operation_has_unique_cli_path(manifest: Manifest) -> None:

@@ -544,8 +544,8 @@ index 6a38d6c..b786cf5 100644
 +
 +# --- generator manifest + operation-identity (spec §6, §18.1) -------------
 +
-+EXPECTED_SPEC_COUNT = 41
-+EXPECTED_OPERATION_COUNT = 455
++EXPECTED_SPEC_COUNT = 40
++EXPECTED_OPERATION_COUNT = 452
 +
 +
 +def test_enumerated_counts_match_snapshot() -> None:
@@ -556,7 +556,7 @@ index 6a38d6c..b786cf5 100644
 +
 +
 +def test_operation_identity_has_no_collisions() -> None:
-+    # All 455 operations must enumerate to unique python + CLI names; this is the
++    # All 452 operations must enumerate to unique python + CLI names; this is the
 +    # guard that replaced the renderer's old silent-skip behavior (spec §6.2).
 +    services = load_all_services()
 +    validate_operation_identity(services)  # raises on any collision

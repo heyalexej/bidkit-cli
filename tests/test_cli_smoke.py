@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -42,8 +43,31 @@ def test_api_list_reports_counts(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["api", "list", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["service_count"] == 41
-    assert payload["operation_count"] == 455
+    assert payload["service_count"] == 40
+    assert payload["operation_count"] == 452
+
+
+def test_api_list_omits_removed_sell_compliance(runner: CliRunner) -> None:
+    """The decommissioned Sell Compliance surface must not appear in the listing."""
+    result = runner.invoke(cli, ["api", "list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert not any(op["key"].startswith("sell_compliance.") for op in payload["operations"])
+
+
+def test_sell_group_has_no_compliance_subcommand() -> None:
+    """The decommissioned Sell Compliance service has no generated command tree.
+
+    The direct command tree is generated from the manifest, so a removed service
+    must yield no subcommand — and there must be no compatibility tombstone.
+    Assert on the registered subcommand names (not help prose) so a future
+    service whose description legitimately mentions compliance cannot mask this.
+    """
+    assert isinstance(cli, click.Group)
+    sell = cli.commands["sell"]
+    assert isinstance(sell, click.Group)
+    sell_subcommands = set(sell.commands)
+    assert "compliance" not in sell_subcommands
 
 
 def test_api_list_filter_namespace(runner: CliRunner) -> None:

@@ -1,6 +1,6 @@
 ---
 name: bidkit-cli
-description: Drive the eBay REST APIs from the shell via the bidkit CLI. Discover, inspect, safely call, and verify any of the 455 generated operations across 41 services. Read-only by default; mutations require explicit --allow-write. Every invocation is recorded to an append-only session log you can inspect and, with gates, revert.
+description: Drive the eBay REST APIs from the shell via the bidkit CLI. Discover, inspect, safely call, and verify any of the 452 generated operations across 40 services. Read-only by default; mutations require explicit --allow-write. Every invocation is recorded to an append-only session log you can inspect and, with gates, revert.
 ---
 
 # bidkit CLI skill
@@ -8,7 +8,7 @@ description: Drive the eBay REST APIs from the shell via the bidkit CLI. Discove
 **bidkit CLI** is the command-line interface for the [bidkit](https://github.com/heyalexej/bidkit)
 eBay SDK — the public executable is `bidkit`, the Python distribution is `bidkit-cli`
 (so it does not collide with the SDK it depends on). Every eBay REST operation
-represented by the checked-in OpenAPI specs is callable: **41 services, 455
+represented by the checked-in OpenAPI specs is callable: **40 services, 452
 operations** (buy, commerce, developer, post-order, sell).
 
 It is generated from the same normalized specs that generate the Python client, so a shell
@@ -32,7 +32,7 @@ bidkit api schema sell_inventory.createOrReplaceInventoryItem request  # JSON sc
 bidkit sell inventory get-inventory-item SKU            # call it directly
 ```
 
-Universal escape hatch — works for *any* of the 455 operations:
+Universal escape hatch — works for *any* of the 452 operations:
 
 ```bash
 bidkit api call sell_inventory.getInventoryItems --query limit=20 --format json --include-meta
