@@ -334,7 +334,7 @@ def _dispatch_with_retry(
     Instead it does two things the SDK cannot:
 
     1. **Policy-aware suppression**: operations the capability policy marks
-       ``retry=False`` (Leads, VeRO, eDIS, Compliance) are dispatched with the
+       ``retry=False`` (Leads, VeRO, eDIS, Buy bulk/Deal/Marketing) are dispatched with the
        SDK retry budget set to zero, so a 500 on Leads is NOT retried even though
        500 is normally retriable. 403/404 are never
        retried by the SDK regardless.

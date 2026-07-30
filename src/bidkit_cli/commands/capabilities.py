@@ -91,8 +91,8 @@ def capabilities_list(
     """List capability availability across the generated surface.
 
     The default listing is sized for an agent — only the operations the
-    capability policy actually curates (restricted/broken/stale surfaces) plus a
-    summary, instead of all ~455 operations × ~20 mostly-null fields. Pass
+    capability policy actually curates (restricted/broken surfaces) plus a
+    summary, instead of all ~452 operations × ~20 mostly-null fields. Pass
     ``--all`` for the full dump.
 
     ``--scope-blocked`` / ``--granted`` answer "what can this account actually

@@ -18,18 +18,14 @@ def test_manifest_counts(manifest: Manifest) -> None:
     assert manifest.data.namespace_count == 5
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Sell Compliance (PBSE) REST API is fully decommissioned; its service and "
-        "3 operations are removed once the generated manifest is regenerated "
-        "(target surface: 40 services / 452 operations, down from 41 / 455). "
-        "The manifest is owned by a parallel worker and still reflects the old "
-        "surface, so this contract is expected to fail until regeneration lands "
-        "— remove this xfail once manifest.json no longer contains sell_compliance."
-    )
-)
 def test_sell_compliance_surface_is_removed(manifest: Manifest) -> None:
-    """The decommissioned Sell Compliance API must not survive regeneration."""
+    """The decommissioned Sell Compliance (PBSE) REST API must stay absent.
+
+    eBay rolled back the Product-Based Shopping Experience mandate and fully
+    decommissioned the Sell Compliance REST API, so neither its service nor any
+    of its operations may appear in the generated surface. This is a negative
+    regression guard: a regenerated manifest must not reintroduce it.
+    """
     assert "sell_compliance" not in {svc.key for svc in manifest.services}
     assert manifest.operations_for_service("sell_compliance") == []
 
